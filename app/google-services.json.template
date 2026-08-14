@@ -1,0 +1,55 @@
+{
+  "_comment": [
+    "TEMPLATE ONLY — this file is not used by the build.",
+    "Download the real google-services.json from the Firebase console and save",
+    "it next to this file as 'google-services.json'. See docs/FIREBASE_SETUP.md.",
+    "The real file is gitignored and must never be committed."
+  ],
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "YOUR_PROJECT_ID",
+    "firebase_url": "https://YOUR_PROJECT_ID-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "storage_bucket": "YOUR_PROJECT_ID.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "android_client_info": {
+          "package_name": "lk.ac.ucsc.scs3311.smarthome"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "YOUR_ANDROID_API_KEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:1111111111111111111111",
+        "android_client_info": {
+          "package_name": "lk.ac.ucsc.scs3311.smarthome.demo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "YOUR_ANDROID_API_KEY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

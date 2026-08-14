@@ -1,0 +1,13 @@
+# Normalise line endings so the three of us on different machines don't produce
+# whitespace-only diffs.
+* text=auto eol=lf
+
+*.bat  text eol=crlf
+gradlew text eol=lf
+
+*.jar  binary
+*.png  binary
+*.jpg  binary
+*.webp binary
+*.keystore binary
+*.jks  binary

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A house outline with a power dot: the two ideas of the app in one glyph. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,28L28,50v30h18V62h16v18h18V50z M54,36.5L70,50v24h-6V56H44v18h-6V50z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,44m-5,0a5,5 0,1 1,10 0a5,5 0,1 1,-10 0" />
+</vector>

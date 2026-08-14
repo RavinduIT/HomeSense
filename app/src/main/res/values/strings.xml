@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      app_name is intentionally NOT declared here: each product flavour supplies
+      its own via resValue() in app/build.gradle.kts, so the demo build is
+      visibly distinct on the launcher during the presentation.
+    -->
+
+    <string name="status_on">ON</string>
+    <string name="status_off">OFF</string>
+    <string name="status_error">ERROR</string>
+    <string name="status_disconnected">DISCONNECTED</string>
+</resources>
