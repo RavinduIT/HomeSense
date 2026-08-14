@@ -1,0 +1,175 @@
+package lk.ac.ucsc.scs3311.smarthome.ui.device
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import lk.ac.ucsc.scs3311.smarthome.HomeSenseApp
+import lk.ac.ucsc.scs3311.smarthome.data.repository.HomeRepository
+import lk.ac.ucsc.scs3311.smarthome.domain.model.Device
+import lk.ac.ucsc.scs3311.smarthome.domain.model.Safety
+import lk.ac.ucsc.scs3311.smarthome.domain.model.Schedule
+import lk.ac.ucsc.scs3311.smarthome.domain.model.SlotStatus
+
+data class DeviceUiState(
+    val device: Device? = null,
+    /**
+     * Slot ids with a command in flight. The switch shows the requested
+     * position while the hardware is still catching up.
+     */
+    val pendingSlotIds: Set<String> = emptySet(),
+    val message: String? = null,
+    /** Ticks once a second so countdown rings animate without recomposing the world. */
+    val nowMillis: Long = System.currentTimeMillis(),
+)
+
+/**
+ * Controls for a single device.
+ *
+ * ### Optimistic toggles, honestly reconciled
+ * Tapping a switch flips it immediately — waiting for a network round trip
+ * feels broken. But the app only ever writes `desiredState`; it cannot make the
+ * relay move. So the optimistic position is held for at most
+ * [RECONCILE_TIMEOUT_MS], and if `reportedState` has not followed by then, the
+ * switch snaps back and the user is told. That is the difference between an
+ * optimistic UI and a dishonest one.
+ */
+class DeviceViewModel(
+    private val repository: HomeRepository,
+    private val deviceId: String,
+) : ViewModel() {
+
+    private val pending = MutableStateFlow<Set<String>>(emptySet())
+    private val message = MutableStateFlow<String?>(null)
+
+    /** One tick a second, only while something is collecting this ViewModel. */
+    private val clock = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(TICK_MS)
+        }
+    }
+
+    val uiState: StateFlow<DeviceUiState> =
+        combine(
+            repository.device(deviceId),
+            pending,
+            message,
+            clock,
+        ) { device, pendingIds, msg, now ->
+            DeviceUiState(
+                device = device,
+                pendingSlotIds = pendingIds,
+                message = msg,
+                nowMillis = now,
+            )
+        }.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
+            initialValue = DeviceUiState(),
+        )
+
+    fun toggleSlot(slotId: String, desired: Boolean) {
+        viewModelScope.launch {
+            pending.update { it + slotId }
+            runCatching { repository.setSlotDesiredState(deviceId, slotId, desired) }
+                .onFailure {
+                    pending.update { ids -> ids - slotId }
+                    message.value = "Could not reach the hub. Nothing was changed."
+                    return@launch
+                }
+
+            // Wait for the hardware to report back, via the same stream the UI
+            // renders from. No polling, no callback.
+            val settled = withTimeoutOrNull(RECONCILE_TIMEOUT_MS) {
+                repository.device(deviceId).first { current ->
+                    current?.slot(slotId)?.reportedState == desired
+                }
+            }
+
+            pending.update { it - slotId }
+            if (settled == null) {
+                val label = repository.device(deviceId).first()?.slot(slotId)?.label.orEmpty()
+                message.value = if (label.isBlank()) {
+                    "The device did not respond. It is now showing an error."
+                } else {
+                    "$label did not respond. It is now showing an error."
+                }
+            }
+        }
+    }
+
+    /** Master switch on a gang box: every slot, one command each. */
+    fun toggleAll(desired: Boolean) {
+        viewModelScope.launch {
+            val device = repository.device(deviceId).first() ?: return@launch
+            val ids = device.slots.map { it.id }.toSet()
+            pending.update { it + ids }
+            runCatching { repository.setAllSlots(deviceId, desired) }
+                .onFailure { message.value = "Could not reach the hub. Nothing was changed." }
+
+            withTimeoutOrNull(RECONCILE_TIMEOUT_MS) {
+                repository.device(deviceId).first { current ->
+                    current != null && current.slots.all { it.reportedState == desired }
+                }
+            }
+            pending.update { it - ids }
+        }
+    }
+
+    fun updateSchedule(slotId: String, schedule: Schedule) {
+        viewModelScope.launch { repository.updateSchedule(deviceId, slotId, schedule) }
+    }
+
+    fun updateSafety(slotId: String, safety: Safety) {
+        viewModelScope.launch { repository.updateSafety(deviceId, slotId, safety) }
+    }
+
+    fun renameSlot(slotId: String, label: String) {
+        viewModelScope.launch { repository.updateSlotLabel(deviceId, slotId, label.trim()) }
+    }
+
+    fun deleteDevice() {
+        viewModelScope.launch { repository.deleteDevice(deviceId) }
+    }
+
+    fun dismissMessage() {
+        message.value = null
+    }
+
+    companion object {
+        private const val STOP_TIMEOUT_MS = 5_000L
+        private const val TICK_MS = 1_000L
+
+        /**
+         * How long the hardware gets to obey before the optimistic switch is
+         * rolled back. Comfortably longer than a Realtime Database round trip
+         * plus the simulator's own actuation delay, and comfortably shorter
+         * than the worker's 10-second ERROR threshold — so the user is told
+         * something is wrong before the badge turns red, not after.
+         */
+        private const val RECONCILE_TIMEOUT_MS = 4_000L
+
+        fun factory(deviceId: String) = viewModelFactory {
+            initializer {
+                val app = this[APPLICATION_KEY] as HomeSenseApp
+                DeviceViewModel(app.container.repository, deviceId)
+            }
+        }
+    }
+}
+
+/** True when a slot is in a state the user can act on. */
+val SlotStatus.allowsToggle: Boolean get() = this != SlotStatus.DISCONNECTED
