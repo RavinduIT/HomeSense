@@ -1,0 +1,159 @@
+{
+  "//": [
+    "HomeSense Realtime Database security rules.",
+    "",
+    "The point of this file is that the desired/reported/status split is a",
+    "CONSTRAINT, not a convention.",
+    "",
+    "In Realtime Database a `.write` grant cascades to every descendant and",
+    "cannot be revoked further down - so a deeper `.write: false` would do",
+    "nothing. What CAN restrict a client is `.validate`, and the Admin SDK",
+    "bypasses validation entirely. That asymmetry is the mechanism used here:",
+    "`status`, `link`, `onSince` and `mismatchSince` carry a validator that",
+    "only passes when the value is unchanged, so a signed-in client is",
+    "physically unable to move them, while the worker writes them freely.",
+    "",
+    "Honest limitation: the app and the simulator both authenticate",
+    "anonymously, so the rules cannot tell them apart, and a modified app",
+    "could write `reportedState` as though it were the hardware. What no",
+    "client can do is publish `status` - it cannot claim a device is healthy,",
+    "cannot clear an ERROR, and cannot silence a DISCONNECTED. Distinguishing",
+    "the two roles would need custom claims and a backend to mint them, which",
+    "is out of scope here and noted in the report."
+  ],
+  "rules": {
+    "homes": {
+      "$homeId": {
+        ".read": "auth != null",
+
+        "meta": {
+          ".write": "auth != null",
+          "workerLastSeen": {
+            ".validate": "newData.isNumber()"
+          }
+        },
+
+        "floors": {
+          ".write": "auth != null",
+          "$floorId": {
+            "name": { ".validate": "newData.isString() && newData.val().length <= 60" },
+            "level": { ".validate": "newData.isNumber()" },
+            "planAsset": { ".validate": "newData.isString()" },
+            "gridCols": { ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 16" },
+            "gridRows": { ".validate": "newData.isNumber() && newData.val() >= 2 && newData.val() <= 16" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "devices": {
+          ".write": "auth != null",
+
+          "$deviceId": {
+            "floorId": { ".validate": "newData.isString()" },
+            "name": { ".validate": "newData.isString() && newData.val().length <= 60" },
+            "gridX": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            "gridY": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            "kind": {
+              ".validate": "newData.val() == 'OUTLET' || newData.val() == 'MULTI_SWITCH' || newData.val() == 'CAMERA'"
+            },
+
+            "lastSeen": { ".validate": "newData.isNumber()" },
+
+            "link": {
+              ".validate": "(newData.val() == 'ONLINE' || newData.val() == 'DISCONNECTED') && ((!data.exists() && newData.val() == 'DISCONNECTED') || newData.val() == data.val())"
+            },
+
+            "camera": {
+              "snapshotUrl": { ".validate": "newData.isString()" },
+              "streamUrl": { ".validate": "newData.isString()" },
+              "lastFrameAt": { ".validate": "newData.isNumber()" },
+              "$other": { ".validate": false }
+            },
+
+            "slots": {
+              "$slotId": {
+                "label": { ".validate": "newData.isString() && newData.val().length <= 60" },
+
+                "appliance": {
+                  "name": { ".validate": "newData.isString() && newData.val().length <= 60" },
+                  "hazardous": { ".validate": "newData.isBoolean()" },
+                  "watts": { ".validate": "newData.isNumber() || newData.val() == null" },
+                  "$other": { ".validate": false }
+                },
+
+                "desiredState": { ".validate": "newData.isBoolean()" },
+                "reportedState": { ".validate": "newData.isBoolean()" },
+
+                "status": {
+                  ".validate": "(newData.val() == 'ON' || newData.val() == 'OFF' || newData.val() == 'ERROR' || newData.val() == 'DISCONNECTED') && ((!data.exists() && newData.val() == 'DISCONNECTED') || newData.val() == data.val())"
+                },
+
+                "onSince": {
+                  ".validate": "(newData.isNumber() || newData.val() == null) && newData.val() == data.val()"
+                },
+                "mismatchSince": {
+                  ".validate": "(newData.isNumber() || newData.val() == null) && newData.val() == data.val()"
+                },
+
+                "safety": {
+                  "max_on_duration": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 86400"
+                  },
+                  "autoCutoffEnabled": { ".validate": "newData.isBoolean()" },
+                  "$other": { ".validate": false }
+                },
+
+                "schedule": {
+                  "enabled": { ".validate": "newData.isBoolean()" },
+                  "onAtMinuteOfDay": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 1440"
+                  },
+                  "offAtMinuteOfDay": {
+                    ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 1440"
+                  },
+                  "days": {
+                    "$index": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 6" }
+                  },
+                  "$other": { ".validate": false }
+                },
+
+                "$other": { ".validate": false }
+              }
+            },
+
+            "$other": { ".validate": false }
+          }
+        },
+
+        "usage": {
+          ".read": "auth != null",
+          "$deviceId": {
+            "$slotId": {
+              "$eventId": {
+                ".write": "auth != null && !data.exists()",
+                "at": { ".validate": "newData.isNumber()" },
+                "event": {
+                  ".validate": "newData.val() == 'ON' || newData.val() == 'OFF' || newData.val() == 'CUTOFF' || newData.val() == 'ERROR' || newData.val() == 'RECONNECT'"
+                },
+                "durationSec": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+                "source": {
+                  ".validate": "newData.val() == 'APP' || newData.val() == 'SIMULATOR' || newData.val() == 'WORKER' || newData.val() == 'SCHEDULE'"
+                },
+                ".validate": "newData.hasChildren(['at', 'event', 'source'])",
+                "$other": { ".validate": false }
+              }
+            }
+          }
+        },
+
+        "alerts": {
+          ".read": "auth != null",
+          "$alertId": {
+            ".write": "auth != null && data.exists() && newData.exists() && newData.child('message').val() == data.child('message').val() && newData.child('at').val() == data.child('at').val() && newData.child('severity').val() == data.child('severity').val()",
+            "acknowledged": { ".validate": "newData.isBoolean()" }
+          }
+        }
+      }
+    }
+  }
+}
