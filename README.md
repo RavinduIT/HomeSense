@@ -12,8 +12,11 @@ Developed for **SCS 3311**.
 | W.T. Mahagamage | 23001038 | Device profiles, control interface and reporting |
 | D.M. Isakya | 23000643 | Floor representation and grid mapping |
 
-**[Download the APK](../../releases/latest)** ·
+**[Download the APK](apk/HomeSense-1.0.apk)** ·
 [Technical report](docs/REPORT.md) · [Data contract](docs/SCHEMA.md)
+
+The submitted builds are committed to `apk/`. `HomeSense-1.0-demo.apk` installs
+and runs with no configuration and no network connection; see `apk/README.md`.
 
 ---
 
@@ -41,6 +44,7 @@ that separation.
 | `app/` | Android client — Kotlin, Jetpack Compose, MVVM |
 | `worker/` | Safety worker — Node, TypeScript, `firebase-admin` |
 | `simulator/` | Hardware simulator — a single self-contained HTML page |
+| `apk/` | Signed release builds |
 | `docs/` | Report, data contract, demonstration script, defence notes, decision records |
 | `database.rules.json` | Database security rules |
 
@@ -141,6 +145,11 @@ build also exposes the simulator's fault-injection controls within the device
 sheet, since no browser simulator is present.
 
 ## Release builds
+
+The submitted builds are committed to `apk/` and described in `apk/README.md`.
+Both are signed with the project release key.
+
+To rebuild them:
 
 ```bash
 cp keystore.properties.template keystore.properties   # then complete it

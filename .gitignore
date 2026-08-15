@@ -25,6 +25,11 @@ release/
 *.ap_
 *.dex
 
+# The submitted builds in apk/ are a deliverable and are committed
+# deliberately, so that the repository itself carries the application.
+# Build output elsewhere remains excluded by the rule above.
+!apk/*.apk
+
 ### Node ###
 node_modules/
 npm-debug.log*

@@ -29,7 +29,7 @@ demonstration
 | R15 | Usage reporting for significant devices | `data/local/Daos.kt`, `ui/report/ReportScreen.kt` | `UsageDaoTest`, `ReportRangeTest`, `UsageCsvTest` | 18:00 | A |
 | R16 | Web-based simulator reflecting database updates | `simulator/index.html` | Live demonstration | 10:30 | M |
 | R17 | Simulator listens directly to database updates | `simulator/index.html` — `onChildAdded`, `onChildChanged` | Live demonstration: client toggle illuminates the lamp | 6:00 | M |
-| D1 | Source repository and shared APK link | GitHub release, linked from `README.md` | `assembleRelease`, signature confirmed with `apksigner` | — | A |
+| D1 | Source repository and shared APK link | `apk/HomeSense-1.0.apk` committed to the repository and linked from `README.md` | `assembleRelease`, signature confirmed with `apksigner` | — | A |
 | D2 | Report covering synchronising mechanism, floor representation, simulator operations | `docs/REPORT.md`, structured under those headings | — | — | A |
 | D3 | Demonstration under 25 minutes with all three members and their contributions | `docs/DEMO_SCRIPT.md` — three presenter blocks, 22-minute target | — | 0:00, 5:30, 10:00 | A |
 
