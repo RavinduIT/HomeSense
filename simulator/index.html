@@ -1,0 +1,658 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HomeSense — hardware simulator</title>
+
+    <!--
+      A classic script, so it runs during parsing. The module below is deferred
+      by definition, which means window.HOMESENSE_CONFIG is always populated
+      before any of it executes.
+    -->
+    <script src="firebase-config.js"></script>
+
+    <style>
+      :root {
+        --bg: #0f1418;
+        --panel: #182028;
+        --panel-2: #1e2832;
+        --line: #2b3946;
+        --text: #e6edf3;
+        --muted: #8fa3b5;
+        --on: #35c46a;
+        --off: #6b7a89;
+        --error: #ff6b6b;
+        --offline: #f0a92c;
+        --accent: #4cd9e0;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+      header {
+        position: sticky; top: 0; z-index: 10;
+        display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+        padding: 14px 20px;
+        background: linear-gradient(180deg, #131a21 0%, #0f1418 100%);
+        border-bottom: 1px solid var(--line);
+      }
+      header h1 { font-size: 16px; margin: 0; letter-spacing: .3px; }
+      header .sub { color: var(--muted); font-size: 12px; }
+      .spacer { flex: 1; }
+      .pill {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 4px 10px; border-radius: 999px;
+        font-size: 11px; font-weight: 600; letter-spacing: .4px;
+        border: 1px solid var(--line); background: var(--panel);
+      }
+      .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--off); }
+      .dot.ok { background: var(--on); box-shadow: 0 0 8px var(--on); }
+      .dot.bad { background: var(--error); }
+      .dot.warn { background: var(--offline); }
+      button {
+        font: inherit; font-size: 12px; font-weight: 600;
+        color: var(--text); background: var(--panel-2);
+        border: 1px solid var(--line); border-radius: 8px;
+        padding: 7px 12px; cursor: pointer;
+      }
+      button:hover { border-color: var(--accent); }
+      button:disabled { opacity: .4; cursor: not-allowed; }
+      button.danger { border-color: #5a2b2b; color: #ffb3b3; }
+      button.warn { border-color: #5a4620; color: #ffd79a; }
+      button.active { background: #33261a; border-color: var(--offline); color: #ffd79a; }
+      main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+      .floor { margin-bottom: 28px; }
+      .floor h2 {
+        font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px;
+        color: var(--muted); margin: 0 0 12px; font-weight: 600;
+      }
+      .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+      .card {
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: 14px; padding: 14px; transition: border-color .2s;
+      }
+      .card.faulted { border-color: #6b2b2b; }
+      .card.unplugged { opacity: .55; border-style: dashed; }
+      .card h3 { margin: 0 0 2px; font-size: 15px; }
+      .card .kind { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .8px; }
+      .slots { margin: 12px 0 10px; display: flex; flex-direction: column; gap: 10px; }
+      .slot {
+        display: flex; align-items: center; gap: 10px;
+        padding: 8px; border-radius: 10px; background: var(--panel-2);
+      }
+      .slot .name { flex: 1; min-width: 0; }
+      .slot .name b { display: block; font-weight: 600; font-size: 13px; }
+      .slot .name span { color: var(--muted); font-size: 11px; }
+      .badge {
+        font-size: 10px; font-weight: 700; letter-spacing: .6px;
+        padding: 3px 7px; border-radius: 5px; white-space: nowrap;
+      }
+      .badge.ON { background: rgba(53,196,106,.16); color: var(--on); }
+      .badge.OFF { background: rgba(107,122,137,.18); color: var(--off); }
+      .badge.ERROR { background: rgba(255,107,107,.16); color: var(--error); }
+      .badge.DISCONNECTED { background: rgba(240,169,44,.16); color: var(--offline); }
+      /* The lamp is the point of the simulator: the appliance visibly changes. */
+      .lamp {
+        width: 26px; height: 26px; border-radius: 50%; flex: none;
+        background: #2a3540; border: 1px solid var(--line);
+        transition: background .25s, box-shadow .25s;
+      }
+      .lamp.on { background: #ffd766; box-shadow: 0 0 18px 4px rgba(255,215,102,.55); border-color: #ffd766; }
+      .lamp.error { background: #4a2020; border-color: var(--error); }
+      .heat { height: 5px; border-radius: 3px; background: #2a3540; overflow: hidden; margin-top: 6px; }
+      .heat > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg,#f0a92c,#ff5a3c); transition: width 1s linear; }
+      .cam {
+        width: 100%; aspect-ratio: 16/9; border-radius: 10px; margin-top: 10px;
+        background: #0b1210; position: relative; overflow: hidden;
+        display: flex; align-items: center; justify-content: center;
+        color: #6fa98f; font-size: 12px; letter-spacing: 1px;
+      }
+      .cam .scan { position: absolute; left: 0; right: 0; height: 22%; background: rgba(255,255,255,.05); animation: sweep 3s linear infinite; }
+      @keyframes sweep { from { top: -22%; } to { top: 100%; } }
+      .chaos { display: flex; gap: 6px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 10px; }
+      .empty { color: var(--muted); padding: 40px; text-align: center; }
+      code { background: #0b1014; padding: 2px 5px; border-radius: 4px; font-size: 12px; }
+      .banner {
+        margin: 0 0 18px; padding: 12px 14px; border-radius: 10px;
+        border: 1px solid #5a4620; background: #241d10; color: #ffd79a; font-size: 13px;
+      }
+      .banner.err { border-color: #5a2b2b; background: #241212; color: #ffb3b3; }
+      .log {
+        margin-top: 20px; padding: 10px 12px; border: 1px solid var(--line);
+        border-radius: 10px; background: #0b1014; max-height: 160px; overflow: auto;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--muted);
+      }
+    </style>
+  </head>
+
+  <body>
+    <header>
+      <div>
+        <h1>HomeSense · hardware simulator</h1>
+        <div class="sub">
+          The physical appliances. Listens to the database and reflects it.
+        </div>
+      </div>
+      <div class="spacer"></div>
+      <span class="pill"><span class="dot" id="dot-db"></span><span id="txt-db">connecting…</span></span>
+      <span class="pill"><span class="dot" id="dot-worker"></span><span id="txt-worker">worker: unknown</span></span>
+      <button id="btn-seed">Seed demo home</button>
+    </header>
+
+    <main>
+      <div id="banner"></div>
+      <div id="floors"></div>
+      <div class="log" id="log"></div>
+    </main>
+
+    <script type="module">
+      import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js';
+      import {
+        getAuth,
+        signInAnonymously,
+      } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
+      import {
+        getDatabase,
+        ref,
+        onValue,
+        onChildAdded,
+        onChildChanged,
+        onChildRemoved,
+        update,
+        set,
+        push,
+        serverTimestamp,
+        onDisconnect,
+      } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-database.js';
+
+      // ---------------------------------------------------------------------
+      // Config
+      // ---------------------------------------------------------------------
+      const cfg = window.HOMESENSE_CONFIG;
+      const banner = document.getElementById('banner');
+      const logEl = document.getElementById('log');
+
+      function log(message) {
+        const line = document.createElement('div');
+        line.textContent = `${new Date().toLocaleTimeString()}  ${message}`;
+        logEl.prepend(line);
+        while (logEl.childElementCount > 120) logEl.lastElementChild.remove();
+      }
+
+      if (!cfg) {
+        banner.className = 'banner err';
+        banner.innerHTML =
+          'No configuration found. Copy <code>firebase-config.template.js</code> to ' +
+          '<code>firebase-config.js</code> and fill in your project details — see ' +
+          '<code>docs/FIREBASE_SETUP.md</code>.';
+        throw new Error('missing firebase-config.js');
+      }
+
+      const HOME = cfg.homeId;
+      const HEARTBEAT_MS = cfg.heartbeatMs ?? 5000;
+      const ACTUATION_MS = cfg.actuationMs ?? 400;
+
+      const app = initializeApp(cfg.firebase);
+      const auth = getAuth(app);
+      const db = getDatabase(app);
+
+      const homePath = `homes/${HOME}`;
+
+      // ---------------------------------------------------------------------
+      // Local "hardware" state — what a real node would keep in RAM
+      // ---------------------------------------------------------------------
+      const devices = new Map(); // id -> device data from the database
+      const floors = new Map();
+      const faulted = new Set(); // relay refuses to obey
+      const unplugged = new Set(); // node stopped sending heartbeats
+      const pendingActuation = new Map(); // `${deviceId}/${slotId}` -> timeout id
+
+      // ---------------------------------------------------------------------
+      // Connection + worker status
+      // ---------------------------------------------------------------------
+      const dotDb = document.getElementById('dot-db');
+      const txtDb = document.getElementById('txt-db');
+      const dotWorker = document.getElementById('dot-worker');
+      const txtWorker = document.getElementById('txt-worker');
+
+      onValue(ref(db, '.info/connected'), (snap) => {
+        const connected = snap.val() === true;
+        dotDb.className = `dot ${connected ? 'ok' : 'bad'}`;
+        txtDb.textContent = connected ? 'database connected' : 'disconnected';
+        if (connected) {
+          log('connected to Realtime Database');
+          armDisconnectHandlers();
+        }
+      });
+
+      // The worker writes its own heartbeat. Without it running, nothing derives
+      // `status`, so every badge would sit on its last value - it is worth
+      // saying so plainly rather than letting a demo look broken.
+      onValue(ref(db, `${homePath}/meta/workerLastSeen`), (snap) => {
+        const last = snap.val() || 0;
+        const age = Date.now() - last;
+        const alive = last > 0 && age < 30000;
+        dotWorker.className = `dot ${alive ? 'ok' : 'warn'}`;
+        txtWorker.textContent = alive ? 'safety worker: online' : 'safety worker: NOT running';
+        if (!alive) {
+          banner.className = 'banner';
+          banner.innerHTML =
+            'The safety worker is not running, so no one is deriving ' +
+            '<code>status</code>, enforcing <code>max_on_duration</code> or ' +
+            'marking nodes <code>DISCONNECTED</code>. Start it with ' +
+            '<code>npm start</code> in <code>/worker</code>.';
+        } else if (banner.className === 'banner') {
+          banner.className = '';
+          banner.innerHTML = '';
+        }
+      });
+
+      // ---------------------------------------------------------------------
+      // Listeners — per child, exactly as the app does
+      // ---------------------------------------------------------------------
+      onValue(ref(db, `${homePath}/floors`), (snap) => {
+        floors.clear();
+        snap.forEach((child) => floors.set(child.key, child.val()));
+        render();
+      });
+
+      const devicesRef = ref(db, `${homePath}/devices`);
+
+      onChildAdded(devicesRef, (snap) => {
+        devices.set(snap.key, snap.val() || {});
+        log(`device appeared: ${snap.val()?.name ?? snap.key}`);
+        armDisconnectFor(snap.key);
+        reconcile(snap.key);
+        render();
+      });
+
+      onChildChanged(devicesRef, (snap) => {
+        devices.set(snap.key, snap.val() || {});
+        reconcile(snap.key);
+        render();
+      });
+
+      onChildRemoved(devicesRef, (snap) => {
+        devices.delete(snap.key);
+        faulted.delete(snap.key);
+        unplugged.delete(snap.key);
+        render();
+      });
+
+      // ---------------------------------------------------------------------
+      // The relay: follow desiredState into reportedState
+      // ---------------------------------------------------------------------
+      function reconcile(deviceId) {
+        const device = devices.get(deviceId);
+        if (!device || !device.slots) return;
+        if (unplugged.has(deviceId)) return;
+
+        for (const [slotId, slot] of Object.entries(device.slots)) {
+          const desired = slot.desiredState === true;
+          const reported = slot.reportedState === true;
+          if (desired === reported) continue;
+
+          // A faulted relay simply never moves. The worker notices the
+          // sustained mismatch and publishes ERROR - which is the whole point.
+          if (faulted.has(deviceId)) continue;
+
+          const key = `${deviceId}/${slotId}`;
+          if (pendingActuation.has(key)) continue;
+
+          const timer = setTimeout(async () => {
+            pendingActuation.delete(key);
+            if (unplugged.has(deviceId) || faulted.has(deviceId)) return;
+            await update(ref(db, `${homePath}/devices/${deviceId}/slots/${slotId}`), {
+              reportedState: desired,
+            });
+            log(`${device.name} · ${slot.label || slotId} relay -> ${desired ? 'ON' : 'OFF'}`);
+          }, ACTUATION_MS);
+
+          pendingActuation.set(key, timer);
+        }
+      }
+
+      // ---------------------------------------------------------------------
+      // Heartbeat + onDisconnect
+      // ---------------------------------------------------------------------
+      function armDisconnectFor(deviceId) {
+        // If this browser tab dies, the heartbeat freezes at 0 and the worker
+        // marks the node DISCONNECTED within its stale window. Nothing has to
+        // guess: the absence is recorded by the server itself.
+        onDisconnect(ref(db, `${homePath}/devices/${deviceId}/lastSeen`)).set(0);
+      }
+
+      function armDisconnectHandlers() {
+        for (const id of devices.keys()) armDisconnectFor(id);
+      }
+
+      setInterval(async () => {
+        for (const id of devices.keys()) {
+          if (unplugged.has(id)) continue;
+          await update(ref(db, `${homePath}/devices/${id}`), {
+            lastSeen: serverTimestamp(),
+          });
+        }
+      }, HEARTBEAT_MS);
+
+      // ---------------------------------------------------------------------
+      // The three chaos controls
+      // ---------------------------------------------------------------------
+      window.toggleFault = (deviceId) => {
+        if (faulted.has(deviceId)) {
+          faulted.delete(deviceId);
+          log(`fault cleared on ${devices.get(deviceId)?.name}`);
+          reconcile(deviceId); // catch up on whatever was missed
+        } else {
+          faulted.add(deviceId);
+          log(`FAULT injected on ${devices.get(deviceId)?.name} — relay will ignore commands`);
+        }
+        render();
+      };
+
+      window.toggleUnplug = async (deviceId) => {
+        if (unplugged.has(deviceId)) {
+          unplugged.delete(deviceId);
+          await update(ref(db, `${homePath}/devices/${deviceId}`), {
+            lastSeen: serverTimestamp(),
+          });
+          log(`${devices.get(deviceId)?.name} plugged back in`);
+          reconcile(deviceId);
+        } else {
+          unplugged.add(deviceId);
+          // Stop the heartbeat by freezing lastSeen. The worker's stale check
+          // does the rest; the simulator never writes `status` itself.
+          await update(ref(db, `${homePath}/devices/${deviceId}`), { lastSeen: 0 });
+          log(`${devices.get(deviceId)?.name} UNPLUGGED — heartbeat stopped`);
+        }
+        render();
+      };
+
+      /**
+       * A change that starts at the hardware: someone pressed the physical
+       * switch on the wall. Both desired and reported move, and the usage event
+       * is attributed to the SIMULATOR. This is the direct evidence that
+       * externally-driven changes reach the phone with no manual refresh.
+       */
+      window.physicalToggle = async (deviceId, slotId) => {
+        const device = devices.get(deviceId);
+        const slot = device?.slots?.[slotId];
+        if (!slot) return;
+        const next = !(slot.reportedState === true);
+
+        await update(ref(db, `${homePath}/devices/${deviceId}/slots/${slotId}`), {
+          desiredState: next,
+          reportedState: next,
+        });
+        await set(push(ref(db, `${homePath}/usage/${deviceId}/${slotId}`)), {
+          at: serverTimestamp(),
+          event: next ? 'ON' : 'OFF',
+          source: 'SIMULATOR',
+        });
+        log(`PHYSICAL switch pressed: ${device.name} · ${slot.label || slotId} -> ${next ? 'ON' : 'OFF'}`);
+      };
+
+      // ---------------------------------------------------------------------
+      // Rendering
+      // ---------------------------------------------------------------------
+      function statusOf(slot) {
+        return slot.status || 'OFF';
+      }
+
+      function heatPercent(slot) {
+        const max = slot?.safety?.max_on_duration || 0;
+        if (!max || !slot.onSince || statusOf(slot) !== 'ON') return 0;
+        const elapsed = (Date.now() - slot.onSince) / 1000;
+        return Math.max(0, Math.min(100, (elapsed / max) * 100));
+      }
+
+      function render() {
+        const container = document.getElementById('floors');
+
+        if (devices.size === 0) {
+          container.innerHTML =
+            '<div class="empty">No devices in the database yet.<br />' +
+            'Add them from the app, or press <b>Seed demo home</b> above.</div>';
+          return;
+        }
+
+        const byFloor = new Map();
+        for (const [id, device] of devices) {
+          const key = device.floorId || 'unassigned';
+          if (!byFloor.has(key)) byFloor.set(key, []);
+          byFloor.get(key).push([id, device]);
+        }
+
+        let html = '';
+        for (const [floorId, list] of byFloor) {
+          const floorName = floors.get(floorId)?.name || 'Unassigned';
+          html += `<section class="floor"><h2>${escapeHtml(floorName)}</h2><div class="grid">`;
+          for (const [id, device] of list) {
+            html += renderDevice(id, device);
+          }
+          html += '</div></section>';
+        }
+        container.innerHTML = html;
+      }
+
+      function renderDevice(id, device) {
+        const isFaulted = faulted.has(id);
+        const isUnplugged = unplugged.has(id);
+        const classes = ['card', isFaulted ? 'faulted' : '', isUnplugged ? 'unplugged' : '']
+          .filter(Boolean)
+          .join(' ');
+
+        let body = '';
+
+        if (device.kind === 'CAMERA') {
+          body += `<div class="cam">${isUnplugged ? 'NO SIGNAL' : 'MOCK STREAM'}<div class="scan"></div></div>`;
+        } else {
+          const slots = Object.entries(device.slots || {}).sort(([a], [b]) => a.localeCompare(b));
+          body += '<div class="slots">';
+          for (const [slotId, slot] of slots) {
+            const status = statusOf(slot);
+            const lampClass = status === 'ON' ? 'lamp on' : status === 'ERROR' ? 'lamp error' : 'lamp';
+            const heat = heatPercent(slot);
+            body += `
+              <div class="slot">
+                <div class="${lampClass}"></div>
+                <div class="name">
+                  <b>${escapeHtml(slot.label || slotId)}</b>
+                  <span>${escapeHtml(slot.appliance?.name || '—')}</span>
+                  ${heat > 0 ? `<div class="heat"><i style="width:${heat.toFixed(0)}%"></i></div>` : ''}
+                </div>
+                <span class="badge ${status}">${status}</span>
+                <button onclick="physicalToggle('${id}','${slotId}')" title="Press the physical switch">⏻</button>
+              </div>`;
+          }
+          body += '</div>';
+        }
+
+        const slotIds = Object.keys(device.slots || {});
+        return `
+          <article class="${classes}">
+            <h3>${escapeHtml(device.name || id)}</h3>
+            <div class="kind">${escapeHtml(device.kind || 'OUTLET')} · cell ${device.gridX ?? '?'},${device.gridY ?? '?'}</div>
+            ${body}
+            <div class="chaos">
+              <button class="danger ${isFaulted ? 'active' : ''}" onclick="toggleFault('${id}')">
+                ${isFaulted ? 'Clear fault' : 'Simulate fault'}
+              </button>
+              <button class="warn ${isUnplugged ? 'active' : ''}" onclick="toggleUnplug('${id}')">
+                ${isUnplugged ? 'Plug back in' : 'Unplug'}
+              </button>
+              ${
+                slotIds.length > 0
+                  ? `<button onclick="physicalToggle('${id}','${slotIds[0]}')">Physical toggle</button>`
+                  : ''
+              }
+            </div>
+          </article>`;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, (c) => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        })[c]);
+      }
+
+      // Heat bars and countdowns advance once a second without a database write.
+      setInterval(render, 1000);
+
+      // ---------------------------------------------------------------------
+      // Seeding
+      // ---------------------------------------------------------------------
+      document.getElementById('btn-seed').addEventListener('click', async () => {
+        if (!confirm('Write the demo house into the database? Existing floors and devices with the same ids are overwritten.')) {
+          return;
+        }
+        await seed();
+        log('demo home seeded');
+      });
+
+      function slot(label, appliance, extra = {}) {
+        return {
+          label,
+          appliance,
+          desiredState: false,
+          reportedState: false,
+          status: 'DISCONNECTED',
+          onSince: null,
+          safety: { max_on_duration: 0, autoCutoffEnabled: false },
+          schedule: { enabled: false, onAtMinuteOfDay: 0, offAtMinuteOfDay: 0, days: [] },
+          ...extra,
+        };
+      }
+
+      async function seed() {
+        await update(ref(db, `${homePath}/floors`), {
+          'floor-ground': {
+            name: 'Ground floor',
+            level: 0,
+            planAsset: 'ground_floor',
+            gridCols: 8,
+            gridRows: 6,
+          },
+          'floor-upper': {
+            name: 'First floor',
+            level: 1,
+            planAsset: 'first_floor',
+            gridCols: 8,
+            gridRows: 6,
+          },
+        });
+
+        await update(ref(db, `${homePath}/devices`), {
+          'dev-iron': {
+            floorId: 'floor-ground',
+            name: 'Utility outlet',
+            gridX: 1,
+            gridY: 1,
+            kind: 'OUTLET',
+            lastSeen: 0,
+            link: 'DISCONNECTED',
+            slots: {
+              s1: slot('Iron', { name: 'Steam iron', hazardous: true, watts: 1200 }, {
+                safety: { max_on_duration: 30, autoCutoffEnabled: true },
+              }),
+            },
+          },
+          'dev-hall-gang': {
+            floorId: 'floor-ground',
+            name: 'Hall gang box',
+            gridX: 4,
+            gridY: 2,
+            kind: 'MULTI_SWITCH',
+            lastSeen: 0,
+            link: 'DISCONNECTED',
+            slots: {
+              s1: slot('Ceiling light', { name: 'LED panel', hazardous: false, watts: 24 }, {
+                schedule: { enabled: true, onAtMinuteOfDay: 1080, offAtMinuteOfDay: 1380, days: [] },
+              }),
+              s2: slot('Porch light', { name: 'Bulb', hazardous: false, watts: 12 }, {
+                schedule: { enabled: true, onAtMinuteOfDay: 1110, offAtMinuteOfDay: 360, days: [] },
+              }),
+              s3: slot('Ceiling fan', { name: 'Fan', hazardous: false, watts: 60 }),
+            },
+          },
+          'dev-kitchen': {
+            floorId: 'floor-ground',
+            name: 'Kitchen outlet',
+            gridX: 6,
+            gridY: 4,
+            kind: 'OUTLET',
+            lastSeen: 0,
+            link: 'DISCONNECTED',
+            slots: {
+              s1: slot('Kettle', { name: 'Electric kettle', hazardous: true, watts: 1800 }, {
+                safety: { max_on_duration: 120, autoCutoffEnabled: true },
+              }),
+            },
+          },
+          'dev-front-cam': {
+            floorId: 'floor-ground',
+            name: 'Front door camera',
+            gridX: 0,
+            gridY: 4,
+            kind: 'CAMERA',
+            lastSeen: 0,
+            link: 'DISCONNECTED',
+            camera: {
+              snapshotUrl: 'mock://snapshot/front_door',
+              streamUrl: 'mock://stream/front_door',
+              lastFrameAt: 0,
+            },
+          },
+          'dev-bed-gang': {
+            floorId: 'floor-upper',
+            name: 'Bedroom gang box',
+            gridX: 2,
+            gridY: 2,
+            kind: 'MULTI_SWITCH',
+            lastSeen: 0,
+            link: 'DISCONNECTED',
+            slots: {
+              s1: slot('Bed light', { name: 'Bulb', hazardous: false, watts: 9 }),
+              s2: slot('Reading lamp', { name: 'Lamp', hazardous: false, watts: 7 }),
+            },
+          },
+          'dev-landing-cam': {
+            floorId: 'floor-upper',
+            name: 'Landing camera',
+            gridX: 6,
+            gridY: 1,
+            kind: 'CAMERA',
+            lastSeen: 0,
+            link: 'DISCONNECTED',
+            camera: {
+              snapshotUrl: 'mock://snapshot/landing',
+              streamUrl: 'mock://stream/landing',
+              lastFrameAt: 0,
+            },
+          },
+        });
+      }
+
+      // ---------------------------------------------------------------------
+      // Start
+      // ---------------------------------------------------------------------
+      signInAnonymously(auth)
+        .then((cred) => log(`signed in anonymously as ${cred.user.uid.slice(0, 8)}…`))
+        .catch((error) => {
+          banner.className = 'banner err';
+          banner.innerHTML =
+            'Anonymous sign-in failed: <code>' +
+            escapeHtml(error.message) +
+            '</code>. Enable it in Firebase console → Authentication → Sign-in method.';
+        });
+    </script>
+  </body>
+</html>
