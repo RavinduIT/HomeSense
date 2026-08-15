@@ -1,0 +1,13 @@
+# LaTeX build artefacts. The finished PDFs are written to docs/ and are
+# committed there as deliverables.
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.pdf
+preview/

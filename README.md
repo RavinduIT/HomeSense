@@ -13,7 +13,8 @@ Developed for **SCS 3311**.
 | D.M. Isakya | 23000643 | Floor representation and grid mapping |
 
 **[Download the APK](apk/HomeSense-1.0.apk)** ·
-[Technical report](docs/REPORT.md) · [Data contract](docs/SCHEMA.md)
+[Technical report](docs/HomeSense-Technical-Report.pdf) ·
+[Data contract](docs/SCHEMA.md)
 
 The submitted builds are committed to `apk/`. `HomeSense-1.0-demo.apk` installs
 and runs with no configuration and no network connection; see `apk/README.md`.
@@ -163,19 +164,29 @@ signing configuration, so `assembleRelease` still produces an installable APK.
 
 ## Documentation
 
+### Submitted documents
+
+Typeset with LaTeX; sources are in `docs/report/` and build with
+[Tectonic](https://tectonic-typesetting.github.io/).
+
 | Document | Contents |
 |---|---|
-| `docs/REPORT.md` | Technical report: synchronising mechanism, floor representation, simulator operations |
+| [Technical Report](docs/HomeSense-Technical-Report.pdf) | Synchronising mechanism, floor representation and simulator operations, with architecture, verification, the requirement traceability matrix and limitations as appendices |
+| [Demonstration Script](docs/HomeSense-Demonstration-Script.pdf) | Timed run-sheet in three presenter blocks, with priority sequences and contingencies |
+| [Defence Notes](docs/HomeSense-Defence-Notes.pdf) | Preparation for the individual oral defence |
+
+### Repository documentation
+
+| Document | Contents |
+|---|---|
 | `docs/SCHEMA.md` | Database structure, the state separation, and write responsibilities |
-| `docs/TRACEABILITY.md` | Requirement, implementation, test and demonstration timestamp |
-| `docs/DEMO_SCRIPT.md` | Timed demonstration script in three presenter blocks |
-| `docs/DEFENCE_NOTES.md` | Preparation for the individual oral defence |
-| `docs/LIFECYCLE_NOTES.md` | Behaviour under rotation, process death and force stop |
-| `docs/FIREBASE_SETUP.md` | Firebase configuration from an empty account |
-| `docs/CLOUD_FUNCTIONS.md` | Migration path for the worker to Cloud Functions |
 | `docs/CONVENTIONS.md` | Development conventions and architectural rules |
-| `docs/CONTRIBUTIONS.md` | Module ownership |
+| `docs/FIREBASE_SETUP.md` | Firebase configuration from an empty account |
+| `docs/LIFECYCLE_NOTES.md` | Behaviour under rotation, process death and force stop |
+| `docs/CLOUD_FUNCTIONS.md` | Migration path for the worker to Cloud Functions |
+| `docs/CONTRIBUTIONS.md` | Module ownership and boundaries |
 | `docs/adr/` | Architecture decision records |
+| `docs/report/` | LaTeX sources and build instructions for the documents above |
 
 ## Floor plan images
 

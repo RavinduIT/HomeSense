@@ -82,5 +82,7 @@ export ANDROID_HOME=/path/to/android-sdk
 
 - Conventional commit messages (`feat:`, `fix:`, `docs:`, `test:`, `chore:`).
 - Significant decisions are recorded as short entries in `docs/adr/`.
-- `docs/TRACEABILITY.md` is updated as features land. It serves both as the
-  record for assessment and as the checklist for the demonstration recording.
+- The requirement traceability matrix in the technical report (Appendix C) is
+  updated as features land. It serves both as the record for assessment and as
+  the checklist for the demonstration recording. Edit
+  `docs/report/report.tex` and rebuild with `docs/report/build.ps1`.
