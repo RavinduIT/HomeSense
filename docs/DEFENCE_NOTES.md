@@ -1,233 +1,250 @@
 # Defence notes
 
-Evaluation weighs **individual defence**: each member must answer questions
-about their own module orally. Rehearsing these is worth more than another
-feature.
+Assessment includes individual defence: each member must answer questions on
+their own module. These notes cover the five questions most likely to be asked
+of each member, with an answer for each.
 
-Five questions per member, with an answer each. Read your own section aloud
-until you can give the answer without the page — an examiner can tell the
-difference between someone who understands a design and someone reciting it.
+Read your own section aloud until the answers can be given without reference to
+the page.
 
-Two questions any of you may be asked, so all three should know them:
+## Questions any member may be asked
 
-> **"Why three fields instead of one boolean?"**
-> One boolean cannot distinguish *asked for*, *actually happening*, and *what
-> we believe*. `desiredState` is the app's intent, `reportedState` is the
-> hardware's report, and `status` is the server's reconciliation. That is what
-> makes ERROR and DISCONNECTED observations rather than decorations.
+**Why three fields rather than one boolean?**
 
-> **"Where does the safety cut-off run, and why there?"**
-> In `/worker`, server-side. If it ran in the app it would only protect the
-> house while someone had the app open — which is the opposite of what a safety
-> feature is for.
+A single boolean cannot distinguish between a state that has been requested, a
+state that is actually in effect, and the system's confidence in that
+information. `desiredState` records the application's intent, `reportedState`
+records the hardware's confirmation, and `status` is the server's reconciliation
+of the two. This is what allows the error and disconnected states to represent
+observations rather than assumptions.
 
----
+**Where does the safety cut-off run, and why there?**
 
-## Member A — floor representation
-
-*(Owns `ui/plan/`, `ui/floors/`, `GridMapper`, `FloorPlanSpec`.)*
-
-**1. Why store grid cells rather than pixel coordinates?**
-
-Pixels are meaningless across devices — the same offset is a different room on a
-tablet than on a 5-inch phone, and rotating the screen would move every device.
-A cell is a stable identity: cell (4,2) is the same place in the house whatever
-is drawing it. The translation to pixels happens once, at draw time, in
-`GridMapper`, from the current canvas size. It also means the database stores
-something meaningful about the *house* rather than something about one phone.
-
-**2. Why is `GridMapper` a separate class instead of maths inside the Composable?**
-
-Because it is the part that can be wrong in a way you cannot see. Compose code
-needs a device or a preview to exercise; a pure class with no Android dependency
-runs in a JVM unit test in milliseconds. There are 16 tests: the cell↔pixel
-round trip for every cell, taps on the letterbox bars, taps exactly on a cell
-boundary and exactly on the plan edge, a zero-sized canvas, and the property
-that the same cell resolves identically on phone and tablet geometry. Had that
-maths been inline, none of it would be tested and a placement bug would first
-appear during the demo.
-
-**3. What is the letterboxing about, and why does it matter?**
-
-The plan has a fixed aspect ratio; the available canvas usually does not. So the
-plan is fitted inside the canvas preserving its ratio, leaving bars on two
-sides. All cell arithmetic then happens inside that fitted rectangle, never
-against raw canvas bounds. If you skipped that, the grid would stretch with the
-window and every device would drift out of its room as the layout changed.
-`cellAt()` also returns null for a tap on the bars — that is not "outside the
-grid", it is "not on the plan at all".
-
-**4. Why are the plans drawn as geometry rather than shipped as images?**
-
-Three reasons, and the third is the one an examiner cares about. They stay crisp
-at every screen density with no bitmap scaling; the aspect ratio is exact, so
-the letterboxing maths is exact; and there is no third-party image licence to
-track — the plans are our own work, so the attribution question does not arise.
-`FloorPlanSpec` declares rooms, doors and windows in unit-less coordinates and
-Compose `Canvas` draws them.
-
-**5. How does the plan show a gang box with a fault on one channel?**
-
-The marker shows the **most alarming** of its slot statuses, not an average and
-not the first. A fault on one channel must not be hidden by two healthy ones —
-so a three-gang box with one ERROR draws as an error marker. Shape carries the
-device kind (circle, square with one pip per slot, camera outline) and fill
-pattern carries status (solid, outline, cross, dashed). Nothing depends on
-colour alone, which matters for accessibility and for a washed-out projector.
+In the worker process, on the server side. Implemented in the application it
+would only protect the house while the application was running, which defeats
+the purpose of a safety feature.
 
 ---
 
-## Member B — device profiles and reporting
+## R.L. Weerasinghe (23002204) — synchronisation, simulator and safety
 
-*(Owns `ui/device/`, `ui/report/`, `UsageCsv`, the DAO aggregates.)*
-
-**1. Why is `max_on_duration` a property of a slot rather than a device type?**
-
-Because an iron plugs into an ordinary socket, and a timed bulb hangs off
-channel 2 of an ordinary gang box. If we had modelled `HAZARD` and `LIGHT` as
-device kinds, neither would be expressible — you would need a separate device
-type for every combination. A slot is a *controllable point*; the appliance is
-assigned to it, and the appliance's properties (hazardous, watts) and its
-policies (schedule, cut-off) belong at that point. The spec's own wording —
-"specialised slots assigned to appliances" — pushed us there.
-
-**2. Your toggles are optimistic. Isn't that dishonest, given only the server
-knows the truth?**
-
-It would be if we left it there. The switch flips immediately because waiting
-for a round trip feels broken — but the app only writes `desiredState`; it
-cannot move a relay. So the optimistic position is held for at most 4 seconds,
-and if `reportedState` has not followed, the switch snaps back and the user is
-told. The 4 seconds is chosen deliberately: longer than a normal round trip,
-shorter than the worker's 10-second ERROR threshold, so the user is warned just
-*before* the badge officially turns red.
-
-**3. Why aggregate usage in SQL rather than over the Firebase snapshot?**
-
-Two reasons. It works offline — Room is on the device, so the reporting screen
-is fully populated with no network. And it scales: summing thousands of events
-in Kotlin would mean holding the entire log in memory and recomputing on every
-emission, where SQL does it in the database with an index. The query sums
-`durationSec` from OFF and CUTOFF rows only — those are the events that *close*
-an on-period — so no state reconstruction is needed at all.
-
-**4. Why not recompute usage by diffing state snapshots?**
-
-Because it would silently lose every transition that happened while the app was
-closed — which is exactly the window the safety worker exists to cover. An iron
-that switched on at 14:02 and was cut off at 14:32 while the phone was in a
-drawer must appear in the report, and it does, because the *worker* logged those
-events when they happened. Usage is append-only and each actor logs its own
-transitions. Diffing would also double-count on reconnection; upserting on the
-cloud push key means a replay is idempotent.
-
-**5. Why is the kWh figure called an estimate?**
-
-Because it is one. It multiplies the appliance's *rated* wattage by its on-time,
-which assumes it draws full rated power the whole period. A kettle does not — it
-draws hard while heating and little afterwards. Measuring properly needs a real
-energy meter reporting actual consumption, which is outside a simulation.
-Labelling it an estimate everywhere it appears is the honest thing to do, and it
-is a one-line change to accept a measured value if a real meter were added.
-
----
-
-## Member C — synchronisation, simulator and safety
-
-*(Owns `data/remote/`, `data/repository/`, `simulator/`, `worker/`,
-`database.rules.json`.)*
+Owns `data/remote/`, `data/repository/`, `simulator/`, `worker/` and
+`database.rules.json`.
 
 **1. Why Realtime Database rather than Firestore?**
 
-Per-child listeners and `onDisconnect()`. Toggling one slot delivers one small
-`onChildChanged` carrying that device, not a re-send of the whole `/devices`
-subtree — which is what makes a grid of independent toggles feel instant.
-`onDisconnect()` lets the *server* record a client's disappearance, so
-DISCONNECTED is an observed fact rather than an inference by whoever noticed
-first. Firestore's document-granularity listeners and higher write latency are
-the wrong shape here. The cost is no real queries and a denormalised tree, which
-is fine because the tree is small, fixed and documented.
+Two reasons. Realtime Database provides per-child listeners, so toggling one
+slot produces a single callback carrying that device rather than a
+retransmission of the whole devices subtree, which matters for a grid of
+independently toggled slots. It also provides `onDisconnect()`, which lets the
+server record a client's disappearance, so the disconnected state is an
+observation rather than an inference made independently by each observer.
+Firestore's document-level granularity and higher write latency suit a
+different access pattern. The cost is the absence of query support and a
+denormalised tree, which is acceptable because the tree is small, fixed and
+documented.
 
-**2. How is "no manual refresh" actually guaranteed, rather than just untested?**
+**2. How is the absence of manual refresh actually guaranteed?**
 
-There is no refresh method to call. `HomeRepository` has no `refresh()`,
-`reload()` or `fetch()` — the device list is a `StateFlow` fed directly by child
-listeners, so a change from the simulator, the worker or a second phone arrives
-as a callback and re-renders. The repository tests demonstrate it by pushing a
-change onto the source and asserting the flow carries it, without ever calling
-into the repository. It is not a feature we added; it is the only behaviour this
-design can produce.
+There is no refresh method to call. `HomeRepository` exposes no `refresh()`,
+`reload()` or `fetch()` operation. The device list is a `StateFlow` supplied by
+database child listeners, so a change from the simulator, the worker or another
+client arrives as a callback and triggers recomposition. The repository tests
+demonstrate this by emitting a change on the source and asserting the flow
+carries it, without calling into the repository at all. It is a property of the
+design rather than a feature added to it.
 
-**3. Your security rules — can a phone really not lie about a device's status?**
+**3. Can a client actually not misreport a device's status?**
 
-No, and the mechanism is worth explaining precisely. In Realtime Database a
-`.write` grant cascades to every descendant and cannot be revoked further down,
-so a deeper `.write: false` would do nothing. But `.validate` *can* reject a
-client write, and the Admin SDK bypasses validation entirely. We use that
-asymmetry: `status`, `link`, `onSince` and `mismatchSince` carry validators that
-pass only when the value is unchanged. A client is therefore physically unable
-to publish a status — it cannot claim a device is healthy, clear an ERROR, or
-silence a DISCONNECTED, while the worker writes them freely.
+No, and the mechanism is worth stating precisely. In Realtime Database a write
+grant propagates to all descendants of the node where it is declared and cannot
+be withdrawn lower down, so a nested `.write: false` would have no effect.
+Validation rules, however, do restrict client writes, and the Admin SDK bypasses
+validation. The rules use that asymmetry: `status`, `link`, `onSince` and
+`mismatchSince` carry validators that accept a write only when the value is
+unchanged. A client therefore cannot publish a status value, clear an error, or
+suppress a disconnected state, while the worker writes them freely.
 
-The honest limitation: app and simulator both authenticate anonymously, so the
-rules cannot tell them apart, and a modified client could write `reportedState`
-as though it were hardware. Separating them needs custom claims and a backend to
-mint them. What no client can do is write `status`, and that is what the safety
-argument rests on.
+The limitation is that the application and the simulator both authenticate
+anonymously, so the rules cannot distinguish them, and a modified client could
+write `reportedState` as though it were hardware. Separating the roles would
+require custom claims and a service to issue them. What no client can do is
+write `status`, which is what the safety argument depends on.
 
-**4. Why is the cut-off timer not a `setTimeout`?**
+**4. Why is the cut-off timer not implemented with `setTimeout`?**
 
-Because it would die with the process, and die silently. `onSince` lives in the
-database and elapsed time is recomputed from it on every evaluation, so a worker
-that crashes, redeploys, or loses power loses nothing — the next pass sees an
-iron 47 seconds into a 30-second limit and cuts it off immediately. There is a
-Jest test for that exact scenario, and another proving the cut-off fires at
-precisely `max_on_duration`. Two triggers drive the same pure function: child
-listeners for millisecond reaction, and a 30-second sweep for guaranteed
-recovery — so they cannot disagree.
+Because it would be lost when the process terminated, and lost without any
+indication. The `onSince` value is held in the database and elapsed time is
+recomputed from it at every evaluation, so a worker that crashes or is
+redeployed resumes correctly: the next pass observes an appliance forty-seven
+seconds into a thirty-second limit and switches it off immediately. There is a
+test for that scenario and another confirming the cut-off fires at exactly
+`max_on_duration`. Two triggers drive the same pure function — child listeners
+for immediate reaction and a thirty-second sweep for recovery — so they cannot
+produce inconsistent results.
 
-**5. Why does your schedule rule fire on boundaries instead of asserting the
-window?**
+**5. Why does the schedule rule act on boundaries rather than enforcing the
+interval?**
 
-Because asserting the window would mean fighting the user. If the rule enforced
-"on between 18:00 and 23:00", someone who switched a scheduled light off at
-19:00 would find it back on within a minute. Acting only at the on-minute and
-the off-minute means a manual override holds until the next boundary, which is
-what people expect from a timer. Firing is idempotent — at the boundary minute
-it only writes when `desiredState` differs — so the twice-a-minute sweep cannot
-double-fire. The cost is that a boundary missed entirely while the worker was
-down is not retro-applied, which is a deliberate trade and is stated in the
-report rather than hidden.
+Because enforcing the interval would override manual control. A user switching a
+scheduled light off at 19:00 would find it on again within a minute. Acting only
+at the on-minute and off-minute allows an override to persist until the next
+boundary, which matches what a timer is normally expected to do. Application is
+idempotent, since a write occurs at a boundary minute only when the desired
+state differs from the target, so the sweep cannot apply a transition twice. The
+consequence is that a boundary occurring entirely while the worker is down is
+not applied retrospectively, which is stated in the report rather than left
+implicit.
 
 ---
 
-## Questions that will catch you out if you have not thought about them
+## W.T. Mahagamage (23001038) — device profiles and reporting
 
-**"What happens if two people toggle the same switch at once?"**
-Last write wins on `desiredState`, and both phones converge on whatever the
-hardware then reports. No lock is needed because the relay's report — not
-either phone's intent — is the source of truth for `status`.
+Owns `ui/device/`, `ui/report/`, `UsageCsv` and the Room aggregation queries.
 
-**"Why does the app still show DISCONNECTED for a device whose relay is on?"**
-Because we do not know it is on. The heartbeat stopped, so the last
-`reportedState` is stale by an unknown amount. Reporting ON would be presenting
-a guess as a fact, and DISCONNECTED is the honest answer. `onSince` is
-deliberately *kept* across a disconnection, so if the node comes back still
-running, the cut-off counts from when it actually started — not from the
-reconnection.
+**1. Why is `max_on_duration` a property of a slot rather than of a device
+type?**
 
-**"You use Room, but the spec did not ask for it. Why?"**
-Offline resilience and usage aggregation, and we say so in the report rather
-than pretending it was required. Live device *status* is deliberately not
-cached — a stale ON badge from last week is worse than an honest DISCONNECTED.
+Because an iron is connected to an ordinary socket and a scheduled lamp may be
+wired to one channel of a gang box. Modelling `HAZARD` and `LIGHT` as device
+kinds would make neither arrangement expressible without a separate type for
+every combination. A slot is a controllable point; the appliance is assigned to
+it, and both the appliance's properties and its policies belong at that point.
+The assignment's phrasing, "specialised slots assigned to appliances", indicates
+the same structure.
 
-**"What if the worker is not running?"**
-Nothing derives `status`, no cut-off fires, and no schedule runs. That is a real
-single point of failure and we do not hide it: the simulator shows the worker's
-own heartbeat and states plainly when it is down. A monitoring system that
-cannot be seen to be alive is worth very little.
+**2. The toggles are optimistic. Is that not misleading, given that only the
+server knows the actual state?**
 
-**"Show me where the app writes `status`."**
-It does not, anywhere. `RemoteHomeSource` — the entire surface of what the app
-can do to the cloud — has no method that writes it. That absence is the design,
-and the database rules enforce it independently of our good intentions.
+It would be if nothing followed. The switch changes position immediately because
+waiting for a round trip makes the interface feel unresponsive, but the
+application writes only `desiredState` and cannot operate a relay. The
+optimistic position is held for at most four seconds, and if `reportedState` has
+not followed, the control reverts and the user is informed. The four seconds is
+chosen to be longer than a normal round trip and shorter than the worker's
+ten-second error threshold, so the user is warned shortly before the status
+indicator changes.
+
+**3. Why aggregate usage in SQL rather than over the database snapshot?**
+
+Two reasons. It works without a network connection, since Room is local, so the
+reporting screen is populated offline. And it scales: summing thousands of
+events in application code would require holding the entire log in memory and
+recomputing on every emission, whereas SQL performs the aggregation in the
+database against an index. The query sums `durationSec` from off and cut-off
+events only, since those are the events that close an on-period, so no state
+reconstruction is required.
+
+**4. Why not derive usage by comparing successive state snapshots?**
+
+Because that would omit every transition occurring while the application was
+closed, which is exactly the period the safety worker covers. An appliance
+switched on at 14:02 and cut off at 14:32 with the phone unavailable must appear
+in the report, and it does, because the worker logged those events when they
+occurred. Usage is append-only and each component logs its own transitions.
+Comparison would also double-count after a reconnection; upserting on the
+database push key makes replay idempotent.
+
+**5. Why is the energy figure described as an estimate?**
+
+Because it is one. It multiplies the appliance's rated wattage by its on-time,
+which assumes full rated draw throughout. A kettle does not behave that way: it
+draws heavily while heating and very little afterwards. Measuring properly would
+require a metering device reporting actual consumption, which is outside the
+scope of a simulation. Labelling it an estimate wherever it appears is the
+accurate description, and accepting a measured value instead would be a
+one-line change.
+
+---
+
+## D.M. Isakya (23000643) — floor representation
+
+Owns `ui/plan/`, `ui/floors/`, `GridMapper` and `FloorPlanSpec`.
+
+**1. Why store grid cells rather than pixel coordinates?**
+
+Pixel coordinates are not meaningful across devices: the same offset falls in a
+different room on a tablet than on a small phone, and rotating the screen would
+move every device. A cell is a stable identity — cell (4,2) is the same location
+in the house regardless of what is rendering it. Translation to pixels happens
+once, at draw time, from the current canvas size. It also means the database
+stores information about the house rather than about one particular screen.
+
+**2. Why is `GridMapper` a separate class rather than arithmetic inside the
+composable?**
+
+Because it is the part that can be wrong in a way that is not visible on
+inspection. Compose code requires a device or a preview to exercise, whereas a
+pure class with no Android dependency runs as a JVM unit test in milliseconds.
+There are sixteen tests: the round trip for every cell, taps on the letterbox
+margins, taps exactly on a cell boundary and on the plan edge, a zero-sized
+canvas, and the property that a given cell resolves identically under phone and
+tablet geometry. Inline, none of that would be tested, and a placement error
+would first appear during the demonstration.
+
+**3. What is the letterboxing, and why does it matter?**
+
+The plan has a fixed aspect ratio and the available canvas generally does not,
+so the plan is fitted within the canvas with its ratio preserved, leaving
+margins on two sides. All cell arithmetic is then performed relative to the
+fitted rectangle rather than the raw canvas bounds. Without that, the grid would
+stretch with the window and devices would drift out of their rooms as the layout
+changed. `cellAt()` also returns null for a tap on the margins, which represents
+"not on the plan" rather than "outside the grid".
+
+**4. Why are plans drawn as geometry rather than supplied as images?**
+
+Rendering stays sharp at any screen density with no bitmap scaling; the aspect
+ratio is exact, which makes the fitting calculation exact; and because the plans
+are original work, there is no third-party image licence to attribute.
+`FloorPlanSpec` declares rooms, doorways and windows in unit-less coordinates,
+and Compose `Canvas` renders them.
+
+**5. How does the plan represent a gang box with a fault on one channel?**
+
+The marker shows the most severe of its slot statuses, not an average and not
+the first. A fault on one channel must not be concealed by two working channels,
+so a three-gang box with one error is drawn as an error marker. Shape carries
+the device kind — circle, square with one indicator per slot, camera outline —
+and fill pattern carries the status: solid, outline, cross, dashed. Nothing
+depends on colour alone, which matters both for accessibility and for
+legibility when projected.
+
+---
+
+## Further questions to prepare
+
+**What happens if two people toggle the same switch simultaneously?**
+
+The last write to `desiredState` takes effect, and both clients converge on
+whatever the hardware subsequently reports. No locking is required, because the
+relay's report rather than either client's intent is the source of truth for
+`status`.
+
+**Why does the application still show disconnected for a device whose relay is
+on?**
+
+Because that is not known. The heartbeat has stopped, so the last reported state
+is stale by an unknown interval, and reporting on would present an assumption as
+an observation. The `onSince` value is deliberately retained across a
+disconnection, so that if the node returns while still running, the cut-off
+counts from when it actually started rather than from the reconnection.
+
+**Room was not required by the assignment. Why is it used?**
+
+For offline availability and for usage aggregation, and the report states this
+rather than implying it was required. Live device status is deliberately not
+cached, since an outdated on indicator is more misleading than an honest
+disconnected one.
+
+**What happens if the worker is not running?**
+
+No status is derived, no cut-off occurs and no schedule is applied. This is a
+genuine single point of failure and it is documented as one. The simulator
+displays the worker's own heartbeat and reports when it is not running.
+
+**Where does the application write `status`?**
+
+It does not, anywhere. `RemoteHomeSource`, which defines the complete set of
+operations the application can perform against the database, contains no method
+that writes it. The database rules enforce the same restriction independently.

@@ -1,54 +1,81 @@
-# HomeSense — technical report
+# Smart Home Monitoring and Control System
 
-**SCS 3311 · Smart Home Monitoring & Control System**
+**Technical Report — SCS 3311**
 
-An Android client, a cloud-connected hardware simulation and a server-side
-safety worker. This report covers the three things the specification asks for:
-the **synchronising mechanism**, the **floor representation**, and the
-**simulator operations**. Architecture, safety rules and limitations are folded
-under those headings; an appendix lists the design decisions.
+| Member | Index number | Module |
+|---|---|---|
+| R.L. Weerasinghe | 23002204 | Synchronisation, simulator and safety worker |
+| W.T. Mahagamage | 23001038 | Device profiles, control interface and reporting |
+| D.M. Isakya | 23000643 | Floor representation and grid mapping |
+
+---
+
+## Introduction
+
+The system comprises an Android client, a web-based hardware simulator and a
+server-side worker process, all communicating through a Firebase Realtime
+Database. Users manage multiple floor plans, place devices of differing
+capabilities onto an abstract grid, and control them from the mobile client.
+The worker enforces safety policy independently of the client.
+
+This report covers the three areas specified for assessment: the synchronising
+mechanism, the floor representation, and the simulator operations. Architecture,
+verification and limitations are addressed within those sections or in the
+appendices.
 
 ---
 
 ## 1. Synchronising mechanism
 
-### 1.1 The idea the system is built on
+### 1.1 State model
 
-Every controllable point in the house — a socket, one channel of a gang box — is
-a **slot**, and every slot carries three separate booleans rather than one:
+The system distinguishes between three related but separate facts about every
+controllable point in the house. Rather than storing a single boolean per
+switch, each slot stores three:
 
 | Field | Meaning | Written by |
 |---|---|---|
-| `desiredState` | "The user wants this on." | the **app** (and the worker, for cut-offs and schedules) |
-| `reportedState` | "The relay is actually closed." | the **simulator** |
-| `status` | The reconciled truth the UI renders. | the **worker** |
+| `desiredState` | The state requested by the user | Mobile client, and the worker for cut-offs and schedules |
+| `reportedState` | The state the hardware confirms | Simulator |
+| `status` | The reconciled value presented in the interface | Worker |
 
-One boolean cannot express the difference between *asked for*, *actually
-happening*, and *what we believe*. Three can, and that is what makes `ERROR` and
-`DISCONNECTED` observed facts instead of decorative badges:
+A single boolean cannot distinguish between a state that has been requested, a
+state that is actually in effect, and the system's confidence in that
+information. Three fields make the distinction explicit, and this is what allows
+the `ERROR` and `DISCONNECTED` states to carry meaning:
 
-- `ERROR` arises only from a **sustained disagreement** between what was asked
-  for and what is reported. A brief disagreement is not a fault — it is a
-  command in flight — so the worker requires the mismatch to persist for 10
-  seconds before classifying it.
-- `DISCONNECTED` arises only from **silence**: a heartbeat older than 15
-  seconds. It outranks every other state, because if nobody has told us what a
-  relay is doing, reporting `OFF` would be a guess presented as a fact.
+- `ERROR` is raised only when `desiredState` and `reportedState` disagree for
+  longer than a tolerance window of ten seconds. A brief disagreement is
+  expected during normal operation, as it represents a command in transit.
+- `DISCONNECTED` is raised only when a device's heartbeat is older than fifteen
+  seconds. It takes precedence over all other states. Where no report has been
+  received, presenting `OFF` would express an assumption as though it were an
+  observation.
 
-### 1.2 Why Realtime Database rather than Firestore
+### 1.2 Choice of database
 
-Realtime Database gives per-child listeners, so toggling one slot delivers one
-small `onChildChanged` carrying that device — not a re-send of the whole
-`/devices` subtree. It also provides `onDisconnect()`, which lets the *server*
-record a client's disappearance rather than leaving the app to infer it.
+Firebase Realtime Database was selected in preference to Cloud Firestore for
+two reasons.
 
-Firestore's document-granularity listeners and higher write latency are the
-wrong shape for a grid of independently toggled slots. The cost of the choice —
-no meaningful queries, a denormalised tree kept consistent by hand — is
-acceptable because the tree is small, fixed, and pinned down in
-`docs/SCHEMA.md`.
+First, Realtime Database supports per-child listeners. Toggling a single slot
+produces one `onChildChanged` callback carrying that device, rather than a
+retransmission of the whole `/devices` subtree. For a grid of independently
+toggled slots this materially affects both latency and data volume.
 
-### 1.3 How a change actually travels
+Second, Realtime Database provides `onDisconnect()`, which allows the server to
+record a client's disappearance. Without it, absence would have to be inferred
+by each observer independently.
+
+Firestore's document-level listener granularity and higher write latency are
+less suited to this access pattern. The cost of the choice is the absence of
+meaningful query support and a denormalised tree that must be kept consistent by
+convention. This is acceptable here because the tree is small, its shape is
+fixed, and it is documented in full in `docs/SCHEMA.md`.
+
+### 1.3 Propagation of a state change
+
+The sequence below traces a single toggle from the user's tap to the confirmed
+status.
 
 ```mermaid
 sequenceDiagram
@@ -61,203 +88,209 @@ sequenceDiagram
     U->>A: taps the switch
     A-->>U: switch flips immediately (optimistic)
     A->>DB: set desiredState = true
-    Note over A: writes desiredState ONLY.<br/>It cannot move a relay.
+    Note over A: The client writes desiredState only.
 
     DB-->>S: onChildChanged
-    S->>S: relay closes (~400 ms)
+    S->>S: relay closes (approx. 400 ms)
     S->>DB: set reportedState = true
 
     DB-->>W: onChildChanged
-    W->>W: desired == reported, heartbeat fresh
-    W->>DB: status = ON, onSince = <server ts>
+    W->>W: desired == reported, heartbeat current
+    W->>DB: status = ON, onSince = server timestamp
 
     DB-->>A: onChildChanged
-    A-->>U: badge turns ON — confirmed, not assumed
-    DB-->>S: onChildChanged (lamp lights)
+    A-->>U: status indicator shows ON
+    DB-->>S: onChildChanged (lamp illuminates)
 ```
 
-Three properties follow from that shape:
+Three properties follow from this arrangement.
 
-**No manual refresh exists.** `HomeRepository` has no `refresh()`, `reload()` or
-`fetch()` method — there is nothing to call. The device list is a `StateFlow`
-fed directly by child listeners, so a change made by the simulator, by the
-worker, or by a second phone arrives as a callback and re-renders the screen.
-"Updates with no manual refresh" is not a feature that was added; it is the only
-behaviour this design can produce. The repository tests demonstrate it by
-pushing a change onto the source and asserting the flow carries it, without ever
-calling into the repository.
+**Updates require no manual refresh.** The repository interface exposes no
+`refresh()`, `reload()` or `fetch()` method, because none is required. The
+device list is a `StateFlow` supplied directly by database child listeners, so a
+change originating in the simulator, the worker or a second client arrives as a
+callback and causes recomposition. The repository tests demonstrate this by
+emitting a change on the source and asserting that the flow carries it, without
+any call into the repository.
 
-**Optimistic, but honest.** The switch flips at once, because waiting for a
-round trip feels broken. But the app only writes `desiredState`, so the
-optimistic position is held for at most **4 seconds**; if `reportedState` has
-not followed, the switch snaps back and the user is told. Four seconds sits
-deliberately between a normal round trip and the worker's 10-second `ERROR`
-threshold, so the user is warned slightly *before* the badge officially turns
-red.
+**Toggles are optimistic but reconciled.** The switch position changes
+immediately, since waiting for a network round trip degrades the perceived
+responsiveness of the interface. However, the client writes only `desiredState`
+and cannot itself operate a relay. The optimistic position is therefore held for
+a maximum of four seconds; if `reportedState` has not followed within that
+window, the control reverts and the user is informed. Four seconds was chosen to
+sit between a normal round trip and the worker's ten-second `ERROR` threshold,
+so that the user is notified shortly before the status indicator changes.
 
-**The split is enforced, not merely intended.** In Realtime Database a `.write`
-grant cascades to every descendant and cannot be revoked further down — a
-deeper `.write: false` does nothing. What *can* restrict a client is
-`.validate`, and the Admin SDK bypasses validation entirely. `database.rules.json`
-uses that asymmetry: `status`, `link`, `onSince` and `mismatchSince` carry
-validators that pass only when the value is **unchanged**. A signed-in client is
-therefore physically unable to publish a status. It cannot claim a device is
-healthy, cannot clear an `ERROR`, and cannot silence a `DISCONNECTED`.
+**The write separation is enforced by the database.** In Realtime Database a
+`.write` grant propagates to all descendants of the node at which it is
+declared and cannot be withdrawn at a lower level, so a nested `.write: false`
+has no effect. Validation rules, by contrast, do restrict client writes, and the
+Admin SDK bypasses validation entirely. `database.rules.json` uses this
+asymmetry: the fields `status`, `link`, `onSince` and `mismatchSince` carry
+validators that accept a write only when the value is unchanged. An
+authenticated client therefore cannot publish a status value, clear an `ERROR`,
+or suppress a `DISCONNECTED`, while the worker writes these fields without
+restriction.
 
-**Honest limitation.** The app and the simulator both authenticate anonymously,
-so the rules cannot tell them apart: a modified client could write
-`reportedState` as though it were the hardware. Distinguishing the two roles
-needs custom claims and a backend to mint them, which is out of scope here. What
-no client can do is write `status` — and that is the property the safety
-argument rests on.
+A limitation of this approach is documented in Appendix C.
 
-### 1.4 Offline behaviour
+### 1.4 Offline behaviour and usage logging
 
-Realtime Database disk persistence is enabled, so the last known tree is on the
-device and the first frame after a cold start shows real data. Room mirrors
-floors, layout, alerts and the usage log — not live status, deliberately, since
-a stale `ON` badge from last week is worse than an honest `DISCONNECTED`.
+Realtime Database disk persistence is enabled, so the most recently received
+tree is available locally and the first frame after a cold start displays real
+data rather than a loading indicator. A Room database mirrors floors, device
+layout, alerts and the usage log. Live device status is deliberately excluded
+from this mirror: an outdated `ON` indicator is more misleading than an honest
+`DISCONNECTED`.
 
-Usage events are **append-only**, logged at the moment of transition by
-whichever actor caused it, and never recomputed by diffing snapshots. Diffing
-would silently lose every transition that happened while the app was closed —
-precisely the window the safety worker exists to cover.
+Usage events are append-only. Each is written at the moment of transition by
+whichever component caused it, and usage is never reconstructed by comparing
+successive snapshots. Reconstruction by comparison would omit every transition
+occurring while the client was closed, which is precisely the period the safety
+worker exists to cover.
 
 ---
 
 ## 2. Floor representation
 
-### 2.1 Cells, not pixels
+### 2.1 Coordinate model
 
-A **device** is one physical node: one grid cell, one connection, one heartbeat.
-Its position is stored as **integer cell coordinates**, never pixels, so a plan
-renders identically on a 5-inch phone and a tablet in either orientation.
+A device represents one physical node, occupying one grid cell with one network
+connection and one heartbeat. Its position is stored as integer cell
+coordinates rather than pixel offsets, so that a plan renders consistently
+across screen sizes and orientations.
 
-All translation between cells and screen coordinates lives in one pure class,
-`GridMapper`, with no Android dependency — which is what lets it be tested
-exhaustively. Sixteen unit tests cover the cell↔pixel round trip, the letterbox
-bars, the exact behaviour on cell boundaries and plan edges, degenerate zero-
-sized canvases, and the property that matters most: **the same cell resolves to
-the same cell on phone and tablet geometry**. Floating-point placement bugs are
-the kind that only appear in front of an examiner, so they are pinned down by
-tests rather than by inspection.
+Translation between cell coordinates and screen coordinates is confined to a
+single class, `GridMapper`, which has no Android dependencies and is therefore
+testable as a plain JVM unit. Sixteen tests cover the cell-to-pixel round trip
+for every cell, taps falling on the letterbox margins, taps on cell boundaries
+and plan edges, degenerate zero-sized canvases, and the property that a given
+cell resolves identically under phone and tablet geometry. Errors in this
+arithmetic manifest as devices drawn in the wrong room, which is a class of
+defect best identified by tests rather than by inspection.
 
-The plan image is fitted inside the canvas preserving its aspect ratio, which
-means letterbox bars on two sides. All cell arithmetic happens inside the fitted
-rectangle, never against raw canvas bounds — otherwise every device would drift
-as the window shape changed.
+Because a plan has a fixed aspect ratio and the available canvas generally does
+not, the plan is fitted within the canvas with its ratio preserved, leaving
+margins on two sides. All cell arithmetic is performed relative to the fitted
+rectangle rather than the raw canvas bounds; otherwise the grid would stretch
+with the window and device positions would drift.
 
-### 2.2 Plans as geometry
+### 2.2 Representation of plans
 
-The specification asks for an **abstract, simple** mapping, and we took that
-literally. Plans are declared as rooms, doors and windows in a unit-less
-coordinate space (`FloorPlanSpec`) and drawn with Compose `Canvas`. Three
-consequences, all of them wanted:
+The assignment specifies an abstract and simple mapping. Plans are accordingly
+declared as geometry — rooms, doorways and windows in a unit-less coordinate
+space, defined in `FloorPlanSpec` — and rendered using the Compose `Canvas` API.
 
-- crisp at every screen density, with no bitmap to scale;
-- an exact aspect ratio, so the letterboxing is exact;
-- no third-party image licence to track — the plans are our own work.
+This approach has three advantages over bundled raster images. Rendering remains
+sharp at any screen density, with no bitmap scaling. The aspect ratio is exact,
+which makes the fitting calculation exact. And since the plans are original
+work, no third-party image licence needs to be tracked or attributed.
 
-Three sample plans ship with the app (ground floor, first floor, annex), plus a
-blank grid. A floor stores only the plan's id, so changing a floor's layout
-never disturbs the devices placed on it.
+Three sample plans are supplied (ground floor, first floor and an annex),
+together with a blank grid. A floor record stores only the identifier of its
+plan, so changing a floor's layout does not affect the devices placed on it.
 
-### 2.3 Reading a plan at a glance
+### 2.3 Visual encoding
 
-Markers encode **kind by shape** and **status by fill pattern**:
+Device markers encode kind through shape and status through fill pattern:
 
-| | |
+| Attribute | Encoding |
 |---|---|
-| Outlet | circle |
-| Gang box | square, with one pip per addressable slot |
-| Camera | body-and-lens outline |
-| `ON` | solid fill |
-| `OFF` | plain outline |
-| `ERROR` | outline plus a cross |
-| `DISCONNECTED` | dashed outline |
+| Outlet | Circle |
+| Multi-switch | Square, with one indicator per addressable slot |
+| Camera | Body-and-lens outline |
+| `ON` | Solid fill |
+| `OFF` | Plain outline |
+| `ERROR` | Outline with a cross |
+| `DISCONNECTED` | Dashed outline |
 
-Nothing is conveyed by colour alone, anywhere in the app — status is always
-colour **plus** icon **plus** text. That is an accessibility requirement, and it
-is also what keeps the screen readable when a lecture-theatre projector washes
-the colours out.
+No state is conveyed by colour alone anywhere in the application. Status is
+always presented as colour together with an icon and a text label. This is
+required for accessibility, and it also ensures the interface remains legible
+when projected.
 
-A gang box's marker shows the **most alarming** of its slot statuses: a fault on
-one channel must not be hidden by two healthy ones.
+Where a multi-switch unit has slots in differing states, its marker shows the
+most severe of them, so that a fault on one channel is not concealed by two
+functioning channels.
 
-### 2.4 One gang box is one entity
+### 2.4 Multi-switch units
 
-The specification requires a multi-switch unit be "mapped to a single entity in
-the system", and the data model makes any other shape unrepresentable: `Device`
-holds a `List<Slot>`, so a five-gang plate is one `deviceId`, one grid cell, one
-heartbeat, with five independently addressable slots and a master that addresses
-each in turn. There is no code path anywhere that splits one into several.
+The assignment requires that a multi-switch unit be mapped to a single entity.
+The data model enforces this: `Device` holds a list of `Slot` values, so a
+five-gang plate is one device identifier, one grid cell and one heartbeat, with
+five independently addressable slots and a master control that addresses each in
+sequence. No code path produces more than one device from a single unit.
 
-The corresponding modelling insight is that `max_on_duration` and `schedule`
-belong to a **slot**, not to a device type. Had we modelled `HAZARD` and `LIGHT`
-as device kinds, it would have been impossible to put an iron in an ordinary
-socket or a timed bulb on channel 2 of a gang box — which are the realistic
-cases, not the exotic ones.
+A related modelling decision concerns where scheduling and safety limits belong.
+Both are properties of a slot rather than of a device kind. An iron is connected
+to an ordinary socket, and a scheduled lamp may be wired to one channel of a
+gang box. Modelling `HAZARD` and `LIGHT` as device kinds would make neither
+arrangement expressible, and the assignment's own phrasing — "specialised slots
+assigned to appliances" — indicates the same structure.
 
-The field is spelled `max_on_duration` on the wire, exactly as the
-specification spells it, with the rename to an idiomatic Kotlin property done in
-one visible place.
+The field retains the spelling `max_on_duration` used in the specification. The
+conversion to an idiomatic Kotlin property name occurs at a single point in the
+data layer.
 
 ---
 
 ## 3. Simulator operations
 
-### 3.1 What it is
+### 3.1 Structure
 
-`simulator/index.html` — a single self-contained page using the Firebase Web SDK
-from a CDN. No build step, no server: open it in a browser. It stands in for the
-physical appliances, and it is a *participant* in the protocol, not a viewer of
-it.
+The simulator is a single self-contained HTML page (`simulator/index.html`)
+using the Firebase Web SDK from a content delivery network. It requires no build
+step and no server. It represents the physical appliances and participates in
+the protocol rather than merely displaying it.
 
-It renders a card per device grouped by floor. Lamps glow when their slot is on,
-hazardous slots show a heat bar filling toward `max_on_duration`, and cameras
-cycle a mock stream.
+Devices are rendered as cards grouped by floor. Lamps illuminate when their slot
+is on, slots with an armed cut-off display a bar filling toward
+`max_on_duration`, and cameras display a placeholder stream.
 
-### 3.2 What it writes, and what it does not
+### 3.2 Write responsibilities
 
-The simulator writes exactly two things: `reportedState`, when its relay moves,
-and `lastSeen`, every five seconds. **It never writes `status`.** It is hardware;
-hardware reports, it does not adjudicate. The same restriction the app operates
-under, for the same reason and enforced by the same rules file.
+The simulator writes exactly two fields: `reportedState`, when its relay
+changes, and `lastSeen`, at five-second intervals. It does not write `status`.
+Hardware reports its condition; it does not determine how that condition is
+classified. The same restriction applies to the mobile client, for the same
+reason, and is enforced by the same rules file.
 
-It also registers an `onDisconnect()` handler that pins `lastSeen` to 0. Closing
-the browser tab therefore makes the node `DISCONNECTED` on the phone within the
-worker's 15-second window — and the absence is recorded *by the server*, not
-inferred by anyone.
+The simulator also registers an `onDisconnect()` handler that sets `lastSeen` to
+zero. Closing the browser tab therefore causes the node to be marked
+`DISCONNECTED` within the worker's fifteen-second window, with the absence
+recorded by the server rather than inferred by an observer.
 
-### 3.3 The three chaos controls
+### 3.3 Fault injection controls
 
-Each button exists to make one requirement demonstrable rather than asserted:
+Three controls are provided, each corresponding to a specific requirement:
 
-| Control | What it does | What it proves |
+| Control | Behaviour | Demonstrates |
 |---|---|---|
-| **Simulate fault** | The relay stops obeying commands entirely | `desiredState` and `reportedState` diverge and stay diverged; after 10 s the worker publishes `ERROR`. The app never wrote it. |
-| **Unplug** | The heartbeat stops | `lastSeen` goes stale; the worker publishes `DISCONNECTED`. Silence is measured, not guessed. |
-| **Physical toggle** | A change originating at the hardware | Appears on the phone with no refresh, logged with `source: SIMULATOR`. Nothing in the app initiated it. |
+| Simulate fault | The relay ceases to act on commands | `desiredState` and `reportedState` diverge and remain divergent; after ten seconds the worker publishes `ERROR` |
+| Unplug | The heartbeat stops | `lastSeen` becomes stale and the worker publishes `DISCONNECTED` |
+| Physical toggle | A change originating at the hardware | The change appears in the client without a refresh, recorded with `source: SIMULATOR` |
 
-The fault case is the most instructive. The simulator does not write `ERROR` —
-it simply stops obeying. The error is *derived*, by a third process, from a
-disagreement between two other processes. That is a genuinely different claim
-from an app setting a red badge on itself.
+The fault case is the most informative of the three. The simulator does not
+write an error state; it simply stops responding. The error is derived by a
+third process from a disagreement between two others, which is a stronger
+property than an application setting an indicator on itself.
 
-### 3.4 The safety worker
+### 3.4 Safety worker
 
-The cut-off runs in `/worker` — a Node + TypeScript process using
-`firebase-admin` — and never in the app. The whole point of the requirement is
-that it protects life and property when the phone is off.
+The cut-off is implemented in `worker/`, a Node and TypeScript process using the
+`firebase-admin` SDK, and not in the mobile client. The requirement is that the
+cut-off protects against a hazard when the phone is unavailable.
 
-Cloud Functions would need the Blaze plan and a card on file, so the worker is a
-plain process runnable locally or on a free Render/Railway instance. Every rule
-lives in `worker/src/rules/` as a **pure function with an injected clock**, and
-`executor.ts` is the only file that touches Firebase — so the rules would lift
-into a Cloud Function unchanged. `docs/CLOUD_FUNCTIONS.md` shows that migration
-and is candid about the one place the free-tier design is actually *better*:
-Cloud Scheduler's floor is one minute, where our sweep runs every thirty
-seconds.
+Cloud Functions would require the Blaze billing plan and a registered payment
+method, so the worker is implemented as a standalone process that can be run
+locally or on a free hosting tier. Each rule is written as a pure function with
+an injected clock in `worker/src/rules/`, and `executor.ts` is the only module
+that performs database access. The rules would therefore transfer to a Cloud
+Function without modification. `docs/CLOUD_FUNCTIONS.md` documents that
+migration path, including the one respect in which the present design has an
+advantage: Cloud Scheduler's minimum interval is one minute, whereas the
+standalone worker sweeps every thirty seconds.
 
 ```mermaid
 flowchart LR
@@ -268,7 +301,7 @@ flowchart LR
     end
 
     Repo <-->|desiredState<br/>child listeners| DB[(Realtime<br/>Database)]
-    Sim[Simulator<br/>the appliances] <-->|reportedState<br/>lastSeen| DB
+    Sim[Simulator<br/>appliances] <-->|reportedState<br/>lastSeen| DB
     DB <-->|status, onSince<br/>alerts, cut-offs| Worker[Safety worker<br/>pure rules]
     Worker -.->|FCM push| UI
 
@@ -276,92 +309,114 @@ flowchart LR
     style DB fill:#d7f4df
 ```
 
-Four rules run against every device:
+Four rules are evaluated against every device:
 
-- **`maxOnDurationRule`** — the cut-off. Writes `desiredState = false`, appends
-  a `CUTOFF` usage event, raises a `CRITICAL` alert and pushes an FCM message.
-- **`statusRule`** — derives `status` and owns `onSince` and `mismatchSince`.
-- **`staleHeartbeatRule`** — heartbeat older than 15 s → `DISCONNECTED`.
-- **`scheduleRule`** — minute-boundary on/off windows for lights.
+| Rule | Function |
+|---|---|
+| `maxOnDurationRule` | Sets `desiredState` to false, appends a `CUTOFF` usage event, raises a critical alert and sends a push notification |
+| `statusRule` | Derives `status` and maintains `onSince` and `mismatchSince` |
+| `staleHeartbeatRule` | Marks a device disconnected when its heartbeat exceeds fifteen seconds |
+| `scheduleRule` | Applies on and off transitions at configured minute boundaries |
 
-### 3.5 The detail that matters most
+### 3.5 Persistence of timer state
 
-**Timer state lives in the database, not in memory.** `onSince` is stored, and
-elapsed time is recomputed from it on every evaluation. A `setTimeout` armed at
-switch-on would die with the process — and it would die *silently*, which is
-worse than dying loudly.
+Timer state is held in the database rather than in process memory. The field
+`onSince` is stored, and elapsed time is recomputed from it at every evaluation.
 
-Because the state is stored, a worker that crashes, redeploys, or has its laptop
-lid closed loses nothing: the next pass sees an iron 47 seconds into a
-30-second limit and cuts it off immediately. There is a Jest test for exactly
-that scenario, and another proving the cut-off fires at exactly
-`max_on_duration` — not one second early, not one second late.
+A timer implemented with `setTimeout` would be lost if the process terminated,
+and would be lost without any indication that it had been. Because the state is
+stored, a worker that crashes, is redeployed or loses power resumes correctly:
+the next evaluation observes an appliance that has been running for forty-seven
+seconds against a thirty-second limit and switches it off immediately. This
+scenario is covered by a unit test, as is the requirement that the cut-off fire
+at exactly `max_on_duration`.
 
-Two triggers drive the same pure evaluation: child listeners for millisecond
-reaction, and a 30-second sweep for guaranteed recovery. Because both call the
-identical function, they cannot disagree.
+Two triggers drive the same evaluation function. Child listeners provide
+immediate reaction to changes, and a thirty-second sweep guarantees recovery
+after any interruption. Since both invoke the identical function, they cannot
+produce inconsistent results.
 
-The schedule rule fires on **boundaries, not levels**: it acts at the on-minute
-and the off-minute only. Asserting the whole window would mean a user who
-switched a scheduled light off at 19:00 found it back on within a minute. The
-cost — a boundary missed entirely while the worker was down is not retro-applied
-— is the right trade, and is stated here rather than hidden.
+### 3.6 Schedule semantics
+
+The schedule rule acts on transitions rather than on intervals: it applies a
+change at the configured on-minute and off-minute only. Enforcing the interval
+continuously would override manual control, so that a user switching a scheduled
+light off at 19:00 would find it switched on again within a minute. Acting only
+at boundaries allows a manual override to persist until the next boundary.
+
+Rule application is idempotent, since at a boundary minute a write occurs only
+when `desiredState` differs from the target value. The sweep therefore cannot
+apply a transition twice. The consequence of this design is that a boundary
+occurring entirely while the worker is unavailable is not applied
+retrospectively.
 
 ---
 
-## Appendix A — architecture and stack
+## Appendix A — Architecture and technology
 
-Kotlin, Jetpack Compose (Material 3), MVVM: `Composable → ViewModel (StateFlow)
-→ Repository → data source`. No composable touches Firebase or Room directly.
-`minSdk 26`, `targetSdk 35`, Gradle Kotlin DSL with a version catalog.
+The application is written in Kotlin using Jetpack Compose with Material 3,
+following the MVVM pattern: composable functions observe a ViewModel exposing
+`StateFlow`, which depends on a repository, which depends on the data sources.
+No composable function accesses Firebase or Room directly. The minimum supported
+API level is 26 and the target is 35. The build uses the Gradle Kotlin DSL with
+a version catalogue.
 
-Dependency injection is done by hand in `AppContainer` — twenty lines, for an
-app with one repository. A DI framework would be a fourth thing for three people
-to defend orally, for no benefit at this size.
+Dependency injection is performed manually in `AppContainer`. For an application
+with a single repository, a dependency injection framework would add a further
+component to be understood and defended without corresponding benefit.
 
-Two product flavours: `live` talks to Realtime Database; `demo` runs on an
-in-memory backend that plays simulator, worker and cloud at once, including a
-genuine safety cut-off. The demo build exercises the real repository, real
-ViewModels and real UI with no network — insurance against campus Wi-Fi on
-presentation day, not a mock-up.
+Two product flavours are provided. The `live` flavour communicates with Realtime
+Database. The `demo` flavour runs against an in-memory implementation that
+performs the roles of simulator, worker and database, including a functioning
+safety cut-off, and therefore exercises the real repository, ViewModels and
+interface without network access.
 
-Room is not required by the specification. It is used deliberately for offline
-resilience and because the reporting screen aggregates thousands of events in
-SQL rather than in Kotlin over a Firebase snapshot.
+Room is not required by the assignment. It is used for offline availability and
+because the reporting screen aggregates usage in SQL rather than in application
+code over a database snapshot.
 
-## Appendix B — verification
+## Appendix B — Verification
 
-| Suite | Count | Covers |
+| Suite | Tests | Coverage |
 |---|---|---|
-| App unit tests | 73 | Grid mapping, wire format, repository propagation, Room aggregates, CSV escaping, schedule windows |
-| Worker Jest tests | 40 | Cut-off timing with a fake clock, restart recovery, status precedence, schedule boundaries |
+| Application unit tests | 73 | Grid mapping, wire format, repository propagation, Room aggregation, CSV escaping, schedule windows |
+| Worker rule tests | 40 | Cut-off timing under a controlled clock, restart recovery, status precedence, schedule boundaries |
 
-Both `./gradlew assembleDebug` and `./gradlew test` pass, as do `npm test` and
-`tsc --noEmit` in `/worker`.
+`./gradlew assembleDebug` and `./gradlew test` complete successfully, as do
+`npm test` and `tsc --noEmit` in the worker project. A continuous integration
+workflow runs both suites on every push from a clone containing no credentials.
 
-## Appendix C — limitations
+## Appendix C — Limitations
 
-- **Anonymous auth cannot distinguish app from simulator** (§1.3). No client can
-  write `status`, which is the property that matters, but a modified client
-  could impersonate hardware.
-- **Single home.** The tree is keyed by home id, so multi-tenancy is additive,
-  but it is not implemented.
-- **The worker must be running.** If it stops, nothing derives `status` and no
-  cut-off fires. The simulator therefore shows the worker's own heartbeat and
-  says plainly when it is not running — a monitoring system that cannot be seen
-  to be alive is worth very little.
-- **Cameras are mocked**, as the specification permits. Frames are generated
-  locally from the clock; the real `snapshotUrl` and `streamUrl` are shown
-  beneath the tile so the plumbing a real camera would use is visible.
-- **Energy figures are estimates**, assuming rated wattage for the whole
-  on-period, and are labelled as such everywhere they appear.
+**Client roles are not distinguished.** The mobile client and the simulator both
+authenticate anonymously, so the security rules cannot separate them. A modified
+client could write `reportedState` as though it were hardware. Separating the
+two roles would require custom authentication claims and a service to issue
+them, which is outside the scope of this assignment. No client can write
+`status`, which is the property on which the safety argument depends.
 
-## Appendix D — design decisions
+**A single home is supported.** The database tree is keyed by home identifier,
+so support for multiple homes would be additive, but it is not implemented.
 
-Recorded as ADRs in `docs/adr/`:
+**The worker must be running.** If the worker stops, no status is derived, no
+cut-off occurs and no schedule is applied. This is a single point of failure. The
+simulator therefore displays the worker's own heartbeat and reports when it is
+not running.
 
-| | Decision |
+**Camera feeds are simulated,** as the assignment permits. Frames are generated
+locally. The configured snapshot and stream URIs are displayed beneath the tile
+so that the mechanism a real camera would use remains visible.
+
+**Energy figures are estimates.** They assume the rated wattage is drawn for the
+whole period during which an appliance is on, and are labelled as estimates
+wherever they appear.
+
+## Appendix D — Design decisions
+
+Recorded as architecture decision records in `docs/adr/`:
+
+| Record | Decision |
 |---|---|
-| 0001 | Realtime Database over Firestore — per-child listeners and `onDisconnect()` |
-| 0002 | AGP 8.13.2 / compileSdk 36 — newer androidx needs AGP 9 and a very recent Android Studio |
-| 0003 | A plain Node worker over Cloud Functions — Blaze plan requires a card |
+| 0001 | Realtime Database in preference to Firestore, for per-child listeners and `onDisconnect()` |
+| 0002 | Android Gradle Plugin 8.13.2 with compileSdk 36, since current androidx releases require AGP 9 |
+| 0003 | A standalone Node worker in preference to Cloud Functions, which require a billing plan |

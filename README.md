@@ -1,117 +1,126 @@
 # HomeSense
 
-Smart Home Monitoring & Control — an Android app, a companion hardware
-simulator and a server-side safety worker. Built for **SCS 3311**.
+Smart Home Monitoring and Control System — an Android client, a companion
+hardware simulator and a server-side safety worker, communicating through a
+Firebase Realtime Database.
 
-Multiple floor plans with an abstract grid overlay, heterogeneous device
-profiles (outlets, multi-switch gang boxes, cameras), bidirectional cloud
-synchronisation with no manual refresh, and an automatic safety cut-off that
-switches a fire-hazard appliance off **even when the phone is force-stopped**.
+Developed for **SCS 3311**.
 
-**[⬇ Download the APK](../../releases/latest)** · [Technical report](docs/REPORT.md) ·
-[Data contract](docs/SCHEMA.md)
+| Member | Index number | Module |
+|---|---|---|
+| R.L. Weerasinghe | 23002204 | Synchronisation, simulator and safety worker |
+| W.T. Mahagamage | 23001038 | Device profiles, control interface and reporting |
+| D.M. Isakya | 23000643 | Floor representation and grid mapping |
+
+**[Download the APK](../../releases/latest)** ·
+[Technical report](docs/REPORT.md) · [Data contract](docs/SCHEMA.md)
 
 ---
 
-## The idea in one paragraph
+## Overview
 
-Every controllable point in the house is a **slot**. A wall outlet has one; a
-gang box has two to six and is still a *single* entity on the floor plan; a
-camera has none. Each slot carries three separate booleans — what the app
-**wants** (`desiredState`), what the hardware **reports** (`reportedState`), and
-the reconciled **`status`** the UI shows. The app may write only the first, the
-simulator only the second, and the server-side worker only the third, and the
-database security rules enforce that split. That is what makes `ERROR` and
-`DISCONNECTED` observed facts rather than decorative badges, and it is why a
-safety cut-off cannot be bypassed from a phone.
+The system supports multiple floor plans with an abstract grid overlay, devices
+of differing capabilities (power outlets, multi-switch gang boxes and security
+cameras), bidirectional cloud synchronisation without manual refresh, and an
+automatic safety cut-off that switches off a fire-hazard appliance even when the
+mobile client is not running.
 
-## Repository layout
+Every controllable point in the house is modelled as a *slot*. An outlet has
+one; a gang box has between two and six while remaining a single entity on the
+floor plan; a camera has none. Each slot stores three separate values: the state
+requested by the application (`desiredState`), the state confirmed by the
+hardware (`reportedState`), and the reconciled `status` presented in the
+interface. The application may write only the first, the simulator only the
+second, and the worker only the third, and the database security rules enforce
+that separation.
 
-| Path | What it is |
+## Repository structure
+
+| Path | Contents |
 |---|---|
 | `app/` | Android client — Kotlin, Jetpack Compose, MVVM |
-| `worker/` | Safety worker — Node + TypeScript + `firebase-admin` |
-| `simulator/` | Hardware simulator — one self-contained HTML page |
-| `docs/` | Report, data contract, demo script, defence notes, ADRs |
-| `database.rules.json` | The rules that make the invariant a constraint |
+| `worker/` | Safety worker — Node, TypeScript, `firebase-admin` |
+| `simulator/` | Hardware simulator — a single self-contained HTML page |
+| `docs/` | Report, data contract, demonstration script, defence notes, decision records |
+| `database.rules.json` | Database security rules |
 
-Start with **[`docs/SCHEMA.md`](docs/SCHEMA.md)** — the contract all three
-runtimes share.
+`docs/SCHEMA.md` defines the data contract shared by all three runtimes and is
+the appropriate starting point.
 
 ---
 
-## Quick start — no accounts, no configuration
+## Building without configuration
 
-The `demo` flavour runs on an in-memory backend that plays simulator, worker and
-cloud at once, including a **real** safety cut-off. No Firebase project, no
-network.
+The `demo` flavour runs against an in-memory backend that performs the roles of
+simulator, worker and database, including a working safety cut-off. It requires
+no Firebase project and no network connection.
 
 ```bash
-git clone https://github.com/<your-org>/HomeSense.git
+git clone https://github.com/<organisation>/HomeSense.git
 cd HomeSense
 ./gradlew assembleDemoDebug
 ```
 
-The APK lands in `app/build/outputs/apk/demo/debug/`. Verified: a fresh clone
-containing no secrets builds and passes its tests.
+The APK is written to `app/build/outputs/apk/demo/debug/`.
 
-Requirements: **JDK 17** and the **Android SDK** (platform 36, build-tools
-35.0.0+). Android Studio bundles both. Point Gradle at the SDK either by setting
-`ANDROID_HOME` or by creating `local.properties` with `sdk.dir=/path/to/sdk`.
+Requirements are JDK 17 and the Android SDK with platform 36 and build-tools
+35.0.0 or later. Android Studio provides both. Gradle locates the SDK either
+through the `ANDROID_HOME` environment variable or through a `local.properties`
+file containing `sdk.dir=/path/to/sdk`.
 
-### Run the tests
+### Running the tests
 
 ```bash
-./gradlew testDemoDebugUnitTest    # 73 app tests
-cd worker && npm ci && npm test    # 40 worker tests, no credentials needed
+./gradlew testDemoDebugUnitTest    # 73 application tests
+cd worker && npm ci && npm test    # 40 worker tests, no credentials required
 ```
 
 ---
 
-## Full setup — the live system
+## Configuring the full system
 
-Three processes talking to one Realtime Database.
+The complete system consists of three processes sharing one Realtime Database.
 
-### 1. Firebase
+### 1. Firebase project
 
-Follow **[`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md)**: create a project,
-add a Realtime Database, enable Anonymous auth, and deploy
-`database.rules.json`. Everything is on the free Spark plan; nothing needs a
-card.
+Follow `docs/FIREBASE_SETUP.md`, which covers creating the project, adding a
+Realtime Database, enabling anonymous authentication and deploying
+`database.rules.json`. All of this is available on the free Spark plan.
 
-No secret is committed to this repository. Copy each template:
+No credentials are committed to the repository. Copy each template:
 
-| Template | Copy to |
+| Template | Destination |
 |---|---|
 | `app/google-services.json.template` | `app/google-services.json` |
 | `worker/.env.template` | `worker/.env` |
 | `simulator/firebase-config.template.js` | `simulator/firebase-config.js` |
-| `keystore.properties.template` | `keystore.properties` *(release builds only)* |
+| `keystore.properties.template` | `keystore.properties` (release builds only) |
 
-`homeId` must match across all three — the default is `home-1`.
+The `homeId` value must match across all three components. The default is
+`home-1`.
 
-### 2. The safety worker
+### 2. Safety worker
 
 ```bash
 cd worker
 npm ci
-# put the service-account key at worker/serviceAccountKey.json
+# place the service-account key at worker/serviceAccountKey.json
 npm run build && npm start
 ```
 
-**Start this first.** Nothing derives `status`, enforces `max_on_duration` or
-marks nodes offline without it — the simulator shows the worker's own heartbeat
-and says outright when it is not running.
+Start the worker before the other components. Without it, no status is derived,
+`max_on_duration` is not enforced and devices are not marked offline. The
+simulator displays the worker's heartbeat and reports when it is not running.
 
-Optional, before recording a demo: `npm run seed` writes a week of plausible
-usage history so the reporting screen has something honest to show.
+Optionally, run `npm run seed` before recording a demonstration to populate the
+database with a week of usage history.
 
-### 3. The simulator
+### 3. Simulator
 
-Open `simulator/index.html` in a browser — no build step, no server. Press
-**Seed demo home** once to write the sample house into the database.
+Open `simulator/index.html` in a browser. No build step or server is required.
+Use the *Seed demo home* control once to create the sample house.
 
-### 4. The app
+### 4. Application
 
 ```bash
 ./gradlew assembleLiveDebug
@@ -121,78 +130,62 @@ Open `simulator/index.html` in a browser — no build step, no server. Press
 
 ## Product flavours
 
-| Flavour | Backend | Use it for |
+| Flavour | Backend | Purpose |
 |---|---|---|
-| `demo` | in-memory fake | recording the video, offline development, CI |
-| `live` | Firebase Realtime Database | the real system |
+| `demo` | In-memory implementation | Recording the demonstration, offline development, continuous integration |
+| `live` | Firebase Realtime Database | Normal operation |
 
-`demo` installs alongside `live` — different application ID, labelled "HomeSense
-Demo" on the launcher — so the two are never confused on stage. It also exposes
-the simulator's three chaos controls inside the device sheet, since it has no
-browser simulator to press.
+The two flavours have different application identifiers and can be installed
+alongside each other; the demo build is labelled "HomeSense Demo". The demo
+build also exposes the simulator's fault-injection controls within the device
+sheet, since no browser simulator is present.
 
-## Release build
+## Release builds
 
 ```bash
-cp keystore.properties.template keystore.properties   # then fill it in
+cp keystore.properties.template keystore.properties   # then complete it
 ./gradlew assembleRelease
 ```
 
-Without `keystore.properties` the release build falls back to the debug signing
-config, so `assembleRelease` still produces an installable APK rather than
-failing.
+If `keystore.properties` is absent the release build falls back to the debug
+signing configuration, so `assembleRelease` still produces an installable APK.
 
 ---
-
-## What to look at first
-
-If you have ten minutes and want the interesting parts:
-
-| File | Why |
-|---|---|
-| [`docs/SCHEMA.md`](docs/SCHEMA.md) | The three-field invariant and who may write what |
-| [`worker/src/rules/maxOnDurationRule.ts`](worker/src/rules/maxOnDurationRule.ts) | The cut-off, and why its timer is not a timer |
-| [`database.rules.json`](database.rules.json) | How a client is *made* unable to write `status` |
-| [`app/.../ui/plan/GridMapper.kt`](app/src/main/java/lk/ac/ucsc/scs3311/smarthome/ui/plan/GridMapper.kt) | All cell↔pixel maths, pure and heavily tested |
-| [`app/.../DefaultHomeRepositoryTest.kt`](app/src/test/java/lk/ac/ucsc/scs3311/smarthome/data/repository/DefaultHomeRepositoryTest.kt) | The "no manual refresh" proof |
 
 ## Documentation
 
 | Document | Contents |
 |---|---|
-| [`docs/REPORT.md`](docs/REPORT.md) | Technical report — synchronising mechanism, floor representation, simulator operations |
-| [`docs/SCHEMA.md`](docs/SCHEMA.md) | Database tree, the invariant, the who-writes-what table |
-| [`docs/TRACEABILITY.md`](docs/TRACEABILITY.md) | Requirement → implementation → test → demo timestamp |
-| [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md) | Timed 22-minute run-sheet, three presenter blocks |
-| [`docs/DEFENCE_NOTES.md`](docs/DEFENCE_NOTES.md) | Five viva questions and answers per member |
-| [`docs/LIFECYCLE_NOTES.md`](docs/LIFECYCLE_NOTES.md) | Rotation vs process death vs force stop |
-| [`docs/FIREBASE_SETUP.md`](docs/FIREBASE_SETUP.md) | Click-by-click, from zero |
-| [`docs/CLOUD_FUNCTIONS.md`](docs/CLOUD_FUNCTIONS.md) | Migrating the worker, if the project ever moves to Blaze |
-| [`docs/CONTRIBUTIONS.md`](docs/CONTRIBUTIONS.md) | Who built what |
-| [`docs/adr/`](docs/adr/) | Design decisions, two lines each |
+| `docs/REPORT.md` | Technical report: synchronising mechanism, floor representation, simulator operations |
+| `docs/SCHEMA.md` | Database structure, the state separation, and write responsibilities |
+| `docs/TRACEABILITY.md` | Requirement, implementation, test and demonstration timestamp |
+| `docs/DEMO_SCRIPT.md` | Timed demonstration script in three presenter blocks |
+| `docs/DEFENCE_NOTES.md` | Preparation for the individual oral defence |
+| `docs/LIFECYCLE_NOTES.md` | Behaviour under rotation, process death and force stop |
+| `docs/FIREBASE_SETUP.md` | Firebase configuration from an empty account |
+| `docs/CLOUD_FUNCTIONS.md` | Migration path for the worker to Cloud Functions |
+| `docs/CONVENTIONS.md` | Development conventions and architectural rules |
+| `docs/CONTRIBUTIONS.md` | Module ownership |
+| `docs/adr/` | Architecture decision records |
 
 ## Floor plan images
 
-None. The plans are declared as geometry — rooms, doors and windows in a
-unit-less coordinate space — and drawn with Compose `Canvas`. They are our own
-work, so there is no third-party image licence to attribute, and they stay crisp
-at every screen density.
+None are used. Plans are declared as geometry — rooms, doorways and windows in
+a unit-less coordinate space — and rendered with the Compose `Canvas` API. They
+are original work, so no third-party image licence applies, and they remain
+sharp at any screen density.
 
-## Tests
+## Testing
 
-| Suite | Count |
+| Suite | Tests |
 |---|---|
-| App unit tests | 73 |
+| Application unit tests | 73 |
 | Worker rule tests | 40 |
-| **Total** | **113** |
+| Total | 113 |
 
-CI (`.github/workflows/build.yml`) runs both on every push, from a clone with no
-secrets at all.
-
-## Team
-
-See [`docs/CONTRIBUTIONS.md`](docs/CONTRIBUTIONS.md).
+The continuous integration workflow in `.github/workflows/build.yml` runs both
+suites on every push, from a checkout containing no credentials.
 
 ## Licence
 
-Coursework. No licence granted for reuse.
+Academic coursework. No licence is granted for reuse.
