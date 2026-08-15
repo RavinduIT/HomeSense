@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import lk.ac.ucsc.scs3311.smarthome.ui.demo.DemoChaosPanel
 
 /**
  * The controls for one device, as a bottom sheet over the floor plan.
@@ -108,6 +109,12 @@ fun DeviceControlSheet(
                 TextButton(onClick = viewModel::dismissMessage) { Text("Dismiss") }
             }
         }
+
+        // Present only in the demo flavour; renders nothing in live builds.
+        DemoChaosPanel(
+            device = device,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        )
 
         Spacer(Modifier.height(24.dp))
     }
