@@ -1,0 +1,78 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  android:
+    name: Android app
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # No google-services.json in CI, and none is needed: app/build.gradle.kts
+      # applies the plugin only when the file exists, and the demo flavour runs
+      # on the in-memory backend. A fresh clone builds with no secrets at all,
+      # which is exactly what this job proves.
+      - name: Unit tests
+        run: ./gradlew testDemoDebugUnitTest
+
+      - name: Assemble debug APKs
+        run: ./gradlew assembleDebug
+
+      - name: Upload demo APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: homesense-demo-debug
+          path: app/build/outputs/apk/demo/debug/app-demo-debug.apk
+          if-no-files-found: error
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
+
+  worker:
+    name: Safety worker
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      # The rules are pure functions with an injected clock, so the whole
+      # safety suite runs with no Firebase project and no credentials.
+      - name: Rule tests
+        run: npm test
+
+      - name: Build
+        run: npm run build

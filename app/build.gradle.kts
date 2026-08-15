@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -13,6 +15,19 @@ val googleServicesJson = file("google-services.json")
 if (googleServicesJson.exists()) {
     apply(plugin = libs.plugins.google.services.get().pluginId)
 }
+
+// Signing credentials come from a gitignored properties file. When it is
+// absent — a fresh clone, or CI — the release build falls back to the debug
+// signing config so that `assembleRelease` still produces an installable APK
+// instead of failing. See keystore.properties.template.
+val keystorePropertiesFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystorePropertiesFile.exists()) {
+        keystorePropertiesFile.inputStream().use { load(it) }
+    }
+}
+val hasReleaseKeystore = keystoreProperties.containsKey("storeFile") &&
+    rootProject.file(keystoreProperties.getProperty("storeFile")).exists()
 
 android {
     namespace = "lk.ac.ucsc.scs3311.smarthome"
@@ -47,6 +62,17 @@ android {
         }
     }
 
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
@@ -58,6 +84,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 
