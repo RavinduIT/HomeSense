@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Only the export directory is shared, and only through a FileProvider URI with
+  a temporary read grant. A raw file:// path would throw
+  FileUriExposedException from Android 7 onwards, and would hand the receiving
+  app more access than it needs.
+-->
+<paths>
+    <cache-path name="exports" path="exports/" />
+</paths>
