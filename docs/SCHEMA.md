@@ -37,7 +37,56 @@ several devices.
 
 ---
 
-## 2. Database structure
+## 2. Accounts and households
+
+Identity and tenancy are separate concerns. An account proves who the caller
+is; membership of a household decides what that account may see.
+
+```
+/users/{uid}
+  profile:
+    displayName   : String
+    email         : String
+    lastSeenAt    : Long
+  homes/{homeId}:                 # the account's own index of its households
+    homeName      : String
+    role          : "OWNER" | "MEMBER"
+    joinedAt      : Long
+
+/invites/{code}:                  # bearer credential, 24-hour validity
+    homeId        : String
+    homeName      : String
+    createdBy      : String
+    createdAt     : Long
+    expiresAt     : Long
+
+/homeIndex/{homeId}: true         # lets the worker discover households
+```
+
+`/users/{uid}/homes` exists so that a client can discover its own households
+without reading anything it does not own. `/homes/{homeId}/members` is the copy
+the security rules consult. Both are written in the same multi-path update
+whenever membership changes, so a half-joined state cannot exist.
+
+Invite codes are stored under a top-level node keyed by the code. There is no
+read rule on the collection itself, only on an individual code, so a code can be
+redeemed when already known but the collection cannot be listed. Codes are drawn
+from a cryptographic source, since a code admits its bearer to a household.
+
+### Roles
+
+| | Owner | Member |
+|---|:--:|:--:|
+| Operate devices, edit schedules | Yes | Yes |
+| Add, move and remove devices | Yes | No |
+| Configure `max_on_duration` and cut-offs | Yes | No |
+| Invite and remove members | Yes | No |
+| Delete the household | Yes | No |
+
+Safety configuration is reserved to the owner because altering
+`max_on_duration` changes the protection applied to everyone in the house.
+
+## 3. Household structure
 
 ```
 /homes/{homeId}
@@ -46,6 +95,13 @@ several devices.
     ownerUid      : String
     createdAt     : Long          # server timestamp
     workerLastSeen: Long          # worker heartbeat
+
+  members/{uid}:
+    displayName   : String
+    email         : String
+    role          : "OWNER" | "MEMBER"
+    joinedAt      : Long
+    viaCode       : String?       # the invite redeemed, checked by the rules
 
   floors/{floorId}:
     name          : String
@@ -156,19 +212,31 @@ reports both correctly.
 
 ## 5. Write responsibilities
 
+Every entry below is additionally confined to members of the household in
+question. An account that is not a member can neither read nor write any part of
+it.
+
 | Path | Application | Simulator | Worker |
 |---|:--:|:--:|:--:|
 | `floors/*` | Yes | — | — |
-| `devices/*` metadata and position | Yes | — | — |
+| `devices/*` metadata and position | Owner | — | — |
+| `slots/*/safety` | Owner | — | — |
 | `devices/*/lastSeen` | — | Yes | — |
 | `devices/*/link` | — | — | Yes |
 | `slots/*/desiredState` | Yes | — | Yes |
 | `slots/*/reportedState` | — | Yes | — |
 | `slots/*/status` | — | — | Yes |
 | `slots/*/onSince`, `mismatchSince` | — | — | Yes |
-| `slots/*/safety`, `slots/*/schedule` | Yes | — | — |
+| `slots/*/schedule`, `slots/*/label` | Yes | — | — |
 | `usage/*` | Append | Append | Append |
 | `alerts/*` | Acknowledge only | — | Yes |
 
 `database.rules.json` enforces this table. The restriction is applied by the
 database rather than observed by convention.
+
+Two mechanisms are used, because they behave differently. A `.write` grant
+cascades to every descendant and cannot be withdrawn lower down, so it is used
+only where the whole subtree should be writable. Where a narrower restriction is
+required — `status` and `link`, which no client may move, and `safety`, which
+only an owner may change — a `.validate` rule is used instead, since validation
+does constrain clients and the Admin SDK bypasses it entirely.

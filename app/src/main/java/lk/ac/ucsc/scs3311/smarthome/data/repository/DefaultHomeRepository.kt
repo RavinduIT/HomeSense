@@ -1,12 +1,15 @@
 package lk.ac.ucsc.scs3311.smarthome.data.repository
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
@@ -29,46 +32,85 @@ import lk.ac.ucsc.scs3311.smarthome.domain.model.UsageEvent
 import lk.ac.ucsc.scs3311.smarthome.domain.model.UsageEventType
 
 /**
- * Cloud-backed repository.
+ * Cloud-backed repository, scoped to whichever household is currently active.
  *
- * ### How synchronisation actually works here
- * The device list is a `StateFlow` fed directly by the Realtime Database child
- * listeners. There is no polling, no refresh call and no pull-to-refresh
- * gesture anywhere in the app — a change made by the simulator, by the safety
- * worker, or by another phone arrives as a listener callback and re-renders the
- * screen. "No manual refresh" is not a feature that was added; it is the only
- * behaviour this design can produce.
+ * ### Why the household is a flow rather than a constructor argument
+ * Which home the user may see is not known at application start. It depends on
+ * the restored authentication session, on the memberships that session grants,
+ * and on which of those the user last selected. Taking a fixed identifier at
+ * construction time would mean the data layer had to be rebuilt on every sign-in,
+ * or worse, would point at a household the signed-in account has no right to
+ * read.
+ *
+ * Every stream is therefore derived with `flatMapLatest` over [activeHomeId].
+ * Signing out emits null, which tears down every listener; signing in as someone
+ * else re-subscribes against their household. No listener outlives the session
+ * that was entitled to it.
+ *
+ * ### How synchronisation works
+ * The device list is a `StateFlow` fed by Realtime Database child listeners.
+ * There is no polling, no refresh call and no pull-to-refresh gesture anywhere
+ * in the application: a change made by the simulator, by the safety worker, or
+ * by another member arrives as a listener callback and re-renders the screen.
  *
  * ### Room's role
- * The cloud stream is *mirrored* into Room as a side effect. Room is the source
- * for reporting aggregates and for what the app can draw before the first
- * snapshot arrives — never the source of live device status.
+ * The cloud stream is mirrored into Room as a side effect. Room supplies the
+ * reporting aggregates and what can be drawn before the first snapshot arrives,
+ * never the live device status.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 class DefaultHomeRepository(
     private val remote: RemoteHomeSource,
     private val db: HomeSenseDatabase,
     private val scope: CoroutineScope,
-    private val homeId: String,
+    private val activeHomeId: Flow<String?>,
 ) : HomeRepository {
 
     private var started = false
 
     private val errors = MutableStateFlow<Throwable?>(null)
 
+    /**
+     * The household the write methods act on.
+     *
+     * Writes are user-initiated and synchronous with respect to the flows above,
+     * so the identifier is cached here rather than suspended for on every call.
+     * A write with no active household is dropped rather than defaulting to
+     * some other home.
+     */
+    @Volatile
+    private var writeTargetHomeId: String? = null
+
+    private val homeId: Flow<String?> = activeHomeId
+        .distinctUntilChanged()
+        .onEach { writeTargetHomeId = it }
+
+    /** Runs [block] against the active household, or does nothing if there is none. */
+    private suspend inline fun <T> withHome(block: (String) -> T): T? {
+        val id = writeTargetHomeId ?: return null
+        return block(id)
+    }
+
     override val floors: StateFlow<List<Floor>> =
-        remote.observeFloors(homeId)
+        homeId.flatMapLatest { id ->
+            if (id == null) flowOf(emptyList()) else remote.observeFloors(id)
+        }
             .onEach { mirrorFloors(it) }
             .catch { errors.value = it }
             .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     override val devices: StateFlow<List<Device>> =
-        remote.observeDevices(homeId)
+        homeId.flatMapLatest { id ->
+            if (id == null) flowOf(emptyList()) else remote.observeDevices(id)
+        }
             .onEach { mirrorDevices(it) }
             .catch { errors.value = it }
             .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     override val alerts: StateFlow<List<Alert>> =
-        remote.observeAlerts(homeId)
+        homeId.flatMapLatest { id ->
+            if (id == null) flowOf(emptyList()) else remote.observeAlerts(id)
+        }
             .map { list -> list.sortedByDescending { it.at } }
             .onEach { mirrorAlerts(it) }
             .catch { errors.value = it }
@@ -86,14 +128,12 @@ class DefaultHomeRepository(
     override fun start() {
         if (started) return
         started = true
+        // Usage is mirrored independently of the screens that display it, so the
+        // reporting figures are already available when that tab is opened.
         scope.launch {
-            runCatching { remote.ensureSignedIn() }
-                .onFailure { errors.value = it }
-        }
-        // Usage is mirrored independently of the screens that show it, so the
-        // reporting numbers are already warm when the user opens that tab.
-        scope.launch {
-            remote.observeUsage(homeId)
+            homeId.flatMapLatest { id ->
+                if (id == null) flowOf(emptyList()) else remote.observeUsage(id)
+            }
                 .catch { errors.value = it }
                 .collect { mirrorUsage(it) }
         }
@@ -101,50 +141,66 @@ class DefaultHomeRepository(
 
     // ---- floors -------------------------------------------------------------
 
-    override suspend fun saveFloor(floor: Floor): String = remote.saveFloor(homeId, floor)
+    override suspend fun saveFloor(floor: Floor): String =
+        withHome { id -> remote.saveFloor(id, floor) }.orEmpty()
 
     override suspend fun deleteFloor(floorId: String) {
-        // Devices on a deleted floor would otherwise be orphaned: invisible in
-        // the UI but still consuming a grid cell and still reporting.
-        devices.value.filter { it.floorId == floorId }
-            .forEach { remote.deleteDevice(homeId, it.id) }
-        remote.deleteFloor(homeId, floorId)
+        withHome { id ->
+            // Devices on a deleted floor would otherwise be orphaned: invisible
+            // in the interface but still occupying a cell and still reporting.
+            devices.value.filter { it.floorId == floorId }
+                .forEach { remote.deleteDevice(id, it.id) }
+            remote.deleteFloor(id, floorId)
+        }
     }
 
     // ---- devices ------------------------------------------------------------
 
-    override suspend fun saveDevice(device: Device): String = remote.saveDevice(homeId, device)
+    override suspend fun saveDevice(device: Device): String =
+        withHome { id -> remote.saveDevice(id, device) }.orEmpty()
 
-    override suspend fun deleteDevice(deviceId: String) = remote.deleteDevice(homeId, deviceId)
+    override suspend fun deleteDevice(deviceId: String) {
+        withHome { id -> remote.deleteDevice(id, deviceId) }
+    }
 
-    override suspend fun moveDevice(deviceId: String, gridX: Int, gridY: Int) =
-        remote.moveDevice(homeId, deviceId, gridX, gridY)
+    override suspend fun moveDevice(deviceId: String, gridX: Int, gridY: Int) {
+        withHome { id -> remote.moveDevice(id, deviceId, gridX, gridY) }
+    }
 
     // ---- control ------------------------------------------------------------
 
     override suspend fun setSlotDesiredState(deviceId: String, slotId: String, desired: Boolean) {
-        remote.setDesiredState(homeId, deviceId, slotId, desired)
-        logTransition(deviceId, slotId, desired)
+        withHome { id ->
+            remote.setDesiredState(id, deviceId, slotId, desired)
+            logTransition(id, deviceId, slotId, desired)
+        }
     }
 
     override suspend fun setAllSlots(deviceId: String, desired: Boolean) {
-        val device = devices.value.firstOrNull { it.id == deviceId } ?: return
-        device.slots.forEach { slot ->
-            remote.setDesiredState(homeId, deviceId, slot.id, desired)
-            logTransition(deviceId, slot.id, desired)
+        withHome { id ->
+            val device = devices.value.firstOrNull { it.id == deviceId } ?: return@withHome
+            device.slots.forEach { slot ->
+                remote.setDesiredState(id, deviceId, slot.id, desired)
+                logTransition(id, deviceId, slot.id, desired)
+            }
         }
     }
 
     /**
      * Appends the usage event for a user-initiated change.
      *
-     * The event is logged by the actor that caused the transition — here, the
-     * app. The worker logs its own CUTOFF events and the simulator logs
-     * hardware-originated ones, so the log stays complete even with the phone
-     * switched off. `durationSec` on an OFF is computed from `onSince`, which
-     * only the worker maintains, so it is authoritative.
+     * The event is logged by the component that caused the transition, here the
+     * application. The worker logs its own cut-off events and the simulator logs
+     * hardware-originated ones, so the log remains complete with the phone
+     * switched off. The duration on an off event is computed from `onSince`,
+     * which only the worker maintains, so it is authoritative.
      */
-    private suspend fun logTransition(deviceId: String, slotId: String, desired: Boolean) {
+    private suspend fun logTransition(
+        home: String,
+        deviceId: String,
+        slotId: String,
+        desired: Boolean,
+    ) {
         val slot = devices.value.firstOrNull { it.id == deviceId }?.slot(slotId)
         val duration = if (!desired && slot?.onSince != null) {
             ((System.currentTimeMillis() - slot.onSince) / 1000L).coerceAtLeast(0L)
@@ -153,7 +209,7 @@ class DefaultHomeRepository(
         }
         runCatching {
             remote.appendUsageEvent(
-                homeId,
+                home,
                 UsageEvent(
                     deviceId = deviceId,
                     slotId = slotId,
@@ -168,21 +224,27 @@ class DefaultHomeRepository(
 
     // ---- slot configuration -------------------------------------------------
 
-    override suspend fun updateSlotLabel(deviceId: String, slotId: String, label: String) =
-        remote.updateSlotLabel(homeId, deviceId, slotId, label)
+    override suspend fun updateSlotLabel(deviceId: String, slotId: String, label: String) {
+        withHome { id -> remote.updateSlotLabel(id, deviceId, slotId, label) }
+    }
 
-    override suspend fun updateAppliance(deviceId: String, slotId: String, appliance: Appliance) =
-        remote.updateAppliance(homeId, deviceId, slotId, appliance)
+    override suspend fun updateAppliance(deviceId: String, slotId: String, appliance: Appliance) {
+        withHome { id -> remote.updateAppliance(id, deviceId, slotId, appliance) }
+    }
 
-    override suspend fun updateSafety(deviceId: String, slotId: String, safety: Safety) =
-        remote.updateSafety(homeId, deviceId, slotId, safety)
+    override suspend fun updateSafety(deviceId: String, slotId: String, safety: Safety) {
+        withHome { id -> remote.updateSafety(id, deviceId, slotId, safety) }
+    }
 
-    override suspend fun updateSchedule(deviceId: String, slotId: String, schedule: Schedule) =
-        remote.updateSchedule(homeId, deviceId, slotId, schedule)
+    override suspend fun updateSchedule(deviceId: String, slotId: String, schedule: Schedule) {
+        withHome { id -> remote.updateSchedule(id, deviceId, slotId, schedule) }
+    }
 
     // ---- alerts and reporting -----------------------------------------------
 
-    override suspend fun acknowledgeAlert(alertId: String) = remote.acknowledgeAlert(homeId, alertId)
+    override suspend fun acknowledgeAlert(alertId: String) {
+        withHome { id -> remote.acknowledgeAlert(id, alertId) }
+    }
 
     override fun usageTotals(fromMillis: Long, toMillis: Long): Flow<List<SlotUsageTotal>> =
         db.usageDao().observeTotals(fromMillis, toMillis)
@@ -236,10 +298,10 @@ class DefaultHomeRepository(
     }
 
     /**
-     * Usage rows are upserted, never replaced wholesale: the log is append-only
-     * and a row that has scrolled out of the cloud window must not vanish from
-     * the local history. The slot label and wattage are denormalised in at the
-     * same time so the report can render without a join.
+     * Usage rows are upserted rather than replaced wholesale: the log is
+     * append-only and a row that has scrolled out of the cloud window must not
+     * disappear from local history. The slot label and wattage are denormalised
+     * at the same time so the report renders without a join.
      */
     private suspend fun mirrorUsage(list: List<UsageEvent>) {
         if (list.isEmpty()) return
@@ -264,19 +326,18 @@ class DefaultHomeRepository(
     /*
      * ### Why `SharingStarted.Eagerly` and not `WhileSubscribed`
      *
-     * `WhileSubscribed` is the usual advice, and it is wrong here for two
-     * concrete reasons:
+     * `WhileSubscribed` is the usual advice and is wrong here for two reasons.
      *
-     *  1. **Writes need current state.** Computing `durationSec` for an OFF
-     *     event, iterating a gang box's slots for the master toggle, and
-     *     cascading a floor deletion all read `devices.value`. With
-     *     `WhileSubscribed` that value is empty whenever no screen happens to
-     *     be collecting, so those operations would silently do nothing.
-     *  2. **This is a monitoring app.** Alerts and the usage mirror must keep
-     *     flowing while the user is on another screen. Tearing the listeners
-     *     down on every navigation is the opposite of what the product does.
+     *  1. Writes need current state. Computing the duration for an off event,
+     *     iterating a gang box's slots for the master control, and cascading a
+     *     floor deletion all read `devices.value`. With `WhileSubscribed` that
+     *     value is empty whenever no screen happens to be collecting, so those
+     *     operations would silently do nothing.
+     *  2. This is a monitoring application. Alerts and the usage mirror must
+     *     continue while the user is on another screen.
      *
-     * The cost is one always-open Realtime Database connection for the life of
-     * the process, which is exactly the connection the app needs anyway.
+     * The cost is one open database connection for the life of the session,
+     * which is the connection the application needs in any case. Signing out
+     * closes it, because the upstream flow switches to an empty source.
      */
 }

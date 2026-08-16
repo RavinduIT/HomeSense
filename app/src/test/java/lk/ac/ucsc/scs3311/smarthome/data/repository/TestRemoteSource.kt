@@ -25,6 +25,12 @@ import lk.ac.ucsc.scs3311.smarthome.domain.model.UsageEvent
 class TestRemoteSource(
     initialFloors: List<Floor> = emptyList(),
     initialDevices: List<Device> = emptyList(),
+    /**
+     * The household this source holds data for. Observing any other household
+     * yields nothing, which is what lets a test assert that the repository
+     * genuinely re-subscribed rather than continuing to serve a stale snapshot.
+     */
+    private val servesHomeId: String = "test-home",
 ) : RemoteHomeSource {
 
     private val floors = MutableStateFlow(initialFloors)
@@ -32,16 +38,19 @@ class TestRemoteSource(
     private val alerts = MutableStateFlow<List<Alert>>(emptyList())
     private val usage = MutableStateFlow<List<UsageEvent>>(emptyList())
 
+    private fun <T> servedTo(homeId: String, source: Flow<List<T>>): Flow<List<T>> =
+        if (homeId == servesHomeId) source else MutableStateFlow(emptyList())
+
     /** Everything the repository asked the cloud to do, in order. */
     val writes = mutableListOf<String>()
     val appendedEvents = mutableListOf<UsageEvent>()
     var signInCount = 0
         private set
 
-    override fun observeFloors(homeId: String): Flow<List<Floor>> = floors
-    override fun observeDevices(homeId: String): Flow<List<Device>> = devices
-    override fun observeAlerts(homeId: String): Flow<List<Alert>> = alerts
-    override fun observeUsage(homeId: String): Flow<List<UsageEvent>> = usage
+    override fun observeFloors(homeId: String): Flow<List<Floor>> = servedTo(homeId, floors)
+    override fun observeDevices(homeId: String): Flow<List<Device>> = servedTo(homeId, devices)
+    override fun observeAlerts(homeId: String): Flow<List<Alert>> = servedTo(homeId, alerts)
+    override fun observeUsage(homeId: String): Flow<List<UsageEvent>> = servedTo(homeId, usage)
 
     // ---- test controls ------------------------------------------------------
 

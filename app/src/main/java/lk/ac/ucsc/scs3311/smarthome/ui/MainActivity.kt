@@ -30,12 +30,20 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             HomeSenseTheme {
-                RequestNotificationPermission()
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    HomeSenseNavHost()
+                    // The session gate decides between the authentication flow,
+                    // household onboarding and the dashboard. Nothing below it
+                    // is composed until an account and a household both exist,
+                    // so no screen has to defend against a null session.
+                    SessionGate(
+                        onAuthenticated = {
+                            RequestNotificationPermission()
+                            HomeSenseNavHost()
+                        },
+                    )
                 }
             }
         }

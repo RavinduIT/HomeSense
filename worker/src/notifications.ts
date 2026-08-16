@@ -13,12 +13,25 @@ import { getMessaging } from 'firebase-admin/messaging';
  * evaluation because a notification could not be delivered would be the wrong
  * priority.
  */
-export const SAFETY_TOPIC = 'safety-alerts';
+/**
+ * The topic for a household's safety alerts.
+ *
+ * Per household rather than global. A single shared topic would deliver every
+ * family's cut-off alerts to every installation, which is a disclosure of when
+ * other people are and are not at home. Must match `AppContainer.topicFor`.
+ */
+export function safetyTopicFor(homeId: string): string {
+  return `home-${homeId}`;
+}
 
-export async function sendSafetyAlert(message: string, deviceId: string): Promise<void> {
+export async function sendSafetyAlert(
+  homeId: string,
+  message: string,
+  deviceId: string,
+): Promise<void> {
   try {
     await getMessaging().send({
-      topic: SAFETY_TOPIC,
+      topic: safetyTopicFor(homeId),
       notification: {
         title: 'Safety cut-off',
         body: message,

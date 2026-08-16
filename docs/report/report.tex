@@ -212,6 +212,46 @@ status field in \code{database.rules.json}},label={lst:rules}]
 these fields without restriction. A limitation of this approach is documented in
 Appendix \ref{app:limitations}.}
 
+\subsection{Authentication and tenancy}
+
+Synchronisation is only meaningful once it is established whose data is being
+synchronised. Two questions are answered separately.
+
+\textbf{Identity} is handled by Firebase Authentication with email and password.
+An anonymous session is also offered so the application can be tried before
+registering; it is upgraded in place with \code{linkWithCredential}, which
+preserves the account identifier, so a guest who later registers keeps the
+household, history and alerts accumulated in the meantime.
+
+\textbf{Tenancy} is separate. An account belongs to zero or more households, and
+a household records its members at \code{homes/\$homeId/members}. Every read and
+write rule consults that record, so a household is confined to the people
+admitted to it. Members are admitted in one of two ways: by creating the
+household, which makes the creator its owner, or by redeeming an invite code.
+
+The invite is verified by the database rather than trusted from the client. The
+joining member writes the code into its own membership record, and the rule
+accepts the write only if that code exists under \code{/invites}, names this
+household, and has not expired. There is no read rule on the invite collection
+itself, only on an individual code, so a code can be redeemed when already known
+but the collection cannot be enumerated.
+
+Two roles are distinguished. Any member may operate devices and edit ordinary
+schedules; only the owner may add or remove devices, configure
+\code{max\_on\_duration}, and manage membership. Safety configuration is
+reserved to the owner because altering a cut-off changes the protection applied
+to everyone in the house.
+
+\keypoint{Three consequences of introducing sessions had to be handled
+explicitly rather than emerging on their own. The data layer subscribes through
+the active household as a flow, so signing out tears down every listener rather
+than leaving them attached to a household the session is no longer entitled to.
+The local cache is cleared when the account changes, since Room holds usage
+history and alerts that would otherwise be visible to the next person to sign in
+on the same device. And push notifications are published to a topic named after
+the household rather than to a single shared topic, which would have delivered
+every family's cut-off alerts to every installation.}
+
 \subsection{Offline behaviour and usage logging}
 
 Realtime Database disk persistence is enabled, so the most recently received

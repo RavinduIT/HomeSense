@@ -2,39 +2,118 @@
   "//": [
     "HomeSense Realtime Database security rules.",
     "",
-    "The point of this file is that the desired/reported/status split is a",
-    "CONSTRAINT, not a convention.",
+    "Two separate guarantees are enforced here.",
     "",
-    "In Realtime Database a `.write` grant cascades to every descendant and",
-    "cannot be revoked further down - so a deeper `.write: false` would do",
-    "nothing. What CAN restrict a client is `.validate`, and the Admin SDK",
-    "bypasses validation entirely. That asymmetry is the mechanism used here:",
-    "`status`, `link`, `onSince` and `mismatchSince` carry a validator that",
-    "only passes when the value is unchanged, so a signed-in client is",
-    "physically unable to move them, while the worker writes them freely.",
+    "1. TENANCY. A household is readable and writable only by its members.",
+    "   Membership is recorded at homes/$homeId/members/$uid and is what every",
+    "   rule below consults. A member is admitted either by creating the",
+    "   household, or by presenting an unexpired invite code, which the rule",
+    "   verifies against /invites rather than trusting the client.",
     "",
-    "Honest limitation: the app and the simulator both authenticate",
-    "anonymously, so the rules cannot tell them apart, and a modified app",
-    "could write `reportedState` as though it were the hardware. What no",
-    "client can do is publish `status` - it cannot claim a device is healthy,",
-    "cannot clear an ERROR, and cannot silence a DISCONNECTED. Distinguishing",
-    "the two roles would need custom claims and a backend to mint them, which",
-    "is out of scope here and noted in the report."
+    "2. STATE SEPARATION. No client may publish `status`. In Realtime Database",
+    "   a `.write` grant cascades to every descendant and cannot be revoked",
+    "   further down, so a deeper `.write: false` would do nothing. What CAN",
+    "   restrict a client is `.validate`, and the Admin SDK bypasses validation",
+    "   entirely. That asymmetry is the mechanism: `status`, `link`, `onSince`",
+    "   and `mismatchSince` carry validators that pass only when the value is",
+    "   unchanged, so the worker writes them freely and no client can.",
+    "",
+    "   The same technique restricts safety configuration to the household",
+    "   owner, since altering max_on_duration changes the protection applied to",
+    "   everyone in the house.",
+    "",
+    "Honest limitation: the application and the simulator authenticate as the",
+    "same kind of client, so the rules cannot tell them apart, and a modified",
+    "client could write `reportedState` as though it were hardware. What no",
+    "client can do is publish a status, clear an ERROR, or silence a",
+    "DISCONNECTED. Separating those roles would require custom claims."
   ],
+
   "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null && auth.uid == $uid",
+
+        "profile": {
+          "displayName": { ".validate": "newData.isString() && newData.val().length <= 60" },
+          "email": { ".validate": "newData.isString() && newData.val().length <= 120" },
+          "lastSeenAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        },
+
+        "homes": {
+          "$homeId": {
+            "homeName": { ".validate": "newData.isString() && newData.val().length <= 60" },
+            "role": { ".validate": "newData.val() == 'OWNER' || newData.val() == 'MEMBER'" },
+            "joinedAt": { ".validate": "newData.isNumber()" },
+            "$other": { ".validate": false }
+          }
+        }
+      }
+    },
+
+    "invites": {
+      "//": [
+        "There is no .read at this level, so the collection cannot be listed.",
+        "A code is readable only when its exact key is already known, which is",
+        "what redemption does."
+      ],
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && (root.child('homes').child(newData.child('homeId').val()).child('members').child(auth.uid).child('role').val() == 'OWNER' || (!newData.exists() && root.child('homes').child(data.child('homeId').val()).child('members').child(auth.uid).child('role').val() == 'OWNER'))",
+        "homeId": { ".validate": "newData.isString()" },
+        "homeName": { ".validate": "newData.isString() && newData.val().length <= 60" },
+        "createdBy": { ".validate": "newData.val() == auth.uid" },
+        "createdAt": { ".validate": "newData.isNumber()" },
+        "expiresAt": { ".validate": "newData.isNumber()" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "homeIndex": {
+      "//": "Lets the worker discover households without reading their contents.",
+      "$homeId": {
+        ".write": "auth != null && root.child('homes').child($homeId).child('members').child(auth.uid).exists()",
+        ".validate": "newData.isBoolean()"
+      }
+    },
+
     "homes": {
       "$homeId": {
-        ".read": "auth != null",
+        ".read": "auth != null && root.child('homes').child($homeId).child('members').child(auth.uid).exists()",
 
         "meta": {
-          ".write": "auth != null",
-          "workerLastSeen": {
-            ".validate": "newData.isNumber()"
+          ".write": "auth != null && (!data.exists() && newData.child('ownerUid').val() == auth.uid || root.child('homes').child($homeId).child('members').child(auth.uid).child('role').val() == 'OWNER')",
+          "name": { ".validate": "newData.isString() && newData.val().length <= 60" },
+          "ownerUid": { ".validate": "newData.isString()" },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "workerLastSeen": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        },
+
+        "members": {
+          "$uid": {
+            "//": [
+              "Three admissible cases: the owner manages anyone; a member",
+              "removes themselves; or a newcomer admits themselves by",
+              "presenting an unexpired invite that names this household. The",
+              "invite is checked against /invites, so the client cannot simply",
+              "assert that it holds one."
+            ],
+            ".write": "auth != null && (root.child('homes').child($homeId).child('members').child(auth.uid).child('role').val() == 'OWNER' || (auth.uid == $uid && !newData.exists()) || (auth.uid == $uid && !data.exists() && !root.child('homes').child($homeId).child('meta').exists()) || (auth.uid == $uid && !data.exists() && newData.child('role').val() == 'MEMBER' && root.child('invites').child(newData.child('viaCode').val()).child('homeId').val() == $homeId && root.child('invites').child(newData.child('viaCode').val()).child('expiresAt').val() > now))",
+
+            "displayName": { ".validate": "newData.isString() && newData.val().length <= 60" },
+            "email": { ".validate": "newData.isString() && newData.val().length <= 120" },
+            "role": { ".validate": "newData.val() == 'OWNER' || newData.val() == 'MEMBER'" },
+            "joinedAt": { ".validate": "newData.isNumber()" },
+            "viaCode": { ".validate": "newData.isString() && newData.val().length <= 16" },
+            "$other": { ".validate": false }
           }
         },
 
         "floors": {
-          ".write": "auth != null",
+          ".write": "auth != null && root.child('homes').child($homeId).child('members').child(auth.uid).exists()",
           "$floorId": {
             "name": { ".validate": "newData.isString() && newData.val().length <= 60" },
             "level": { ".validate": "newData.isNumber()" },
@@ -46,18 +125,29 @@
         },
 
         "devices": {
-          ".write": "auth != null",
-
           "$deviceId": {
+            "//": [
+              "Adding, removing and repositioning a device is the owner's",
+              "responsibility. Members are granted narrower writes below:",
+              "operating a slot, editing its label and its schedule, and",
+              "reporting hardware state. Because a .write grant only ever adds",
+              "permission, the two compose without the wider grant weakening",
+              "the narrower one."
+            ],
+            ".write": "auth != null && root.child('homes').child($homeId).child('members').child(auth.uid).child('role').val() == 'OWNER'",
+
             "floorId": { ".validate": "newData.isString()" },
             "name": { ".validate": "newData.isString() && newData.val().length <= 60" },
-            "gridX": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-            "gridY": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            "gridX": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 16" },
+            "gridY": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 16" },
             "kind": {
               ".validate": "newData.val() == 'OUTLET' || newData.val() == 'MULTI_SWITCH' || newData.val() == 'CAMERA'"
             },
 
-            "lastSeen": { ".validate": "newData.isNumber()" },
+            "lastSeen": {
+              ".write": "auth != null && root.child('homes').child($homeId).child('members').child(auth.uid).exists()",
+              ".validate": "newData.isNumber()"
+            },
 
             "link": {
               ".validate": "(newData.val() == 'ONLINE' || newData.val() == 'DISCONNECTED') && ((!data.exists() && newData.val() == 'DISCONNECTED') || newData.val() == data.val())"
@@ -72,17 +162,28 @@
 
             "slots": {
               "$slotId": {
-                "label": { ".validate": "newData.isString() && newData.val().length <= 60" },
+                "label": {
+                  ".write": "auth != null && root.child('homes').child($homeId).child('members').child(auth.uid).exists()",
+                  ".validate": "newData.isString() && newData.val().length <= 60"
+                },
 
                 "appliance": {
+                  ".write": "auth != null && root.child('homes').child($homeId).child('members').child(auth.uid).exists()",
                   "name": { ".validate": "newData.isString() && newData.val().length <= 60" },
                   "hazardous": { ".validate": "newData.isBoolean()" },
                   "watts": { ".validate": "newData.isNumber() || newData.val() == null" },
                   "$other": { ".validate": false }
                 },
 
-                "desiredState": { ".validate": "newData.isBoolean()" },
-                "reportedState": { ".validate": "newData.isBoolean()" },
+                "desiredState": {
+                  ".write": "auth != null && root.child('homes').child($homeId).child('members').child(auth.uid).exists()",
+                  ".validate": "newData.isBoolean()"
+                },
+
+                "reportedState": {
+                  ".write": "auth != null && root.child('homes').child($homeId).child('members').child(auth.uid).exists()",
+                  ".validate": "newData.isBoolean()"
+                },
 
                 "status": {
                   ".validate": "(newData.val() == 'ON' || newData.val() == 'OFF' || newData.val() == 'ERROR' || newData.val() == 'DISCONNECTED') && ((!data.exists() && newData.val() == 'DISCONNECTED') || newData.val() == data.val())"
@@ -96,6 +197,12 @@
                 },
 
                 "safety": {
+                  "//": [
+                    "Owner only. Enforced with .validate rather than .write,",
+                    "because the owner's .write on the device above cascades",
+                    "here and could not be revoked by a narrower .write."
+                  ],
+                  ".validate": "root.child('homes').child($homeId).child('members').child(auth.uid).child('role').val() == 'OWNER'",
                   "max_on_duration": {
                     ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 86400"
                   },
@@ -104,6 +211,7 @@
                 },
 
                 "schedule": {
+                  ".write": "auth != null && root.child('homes').child($homeId).child('members').child(auth.uid).exists()",
                   "enabled": { ".validate": "newData.isBoolean()" },
                   "onAtMinuteOfDay": {
                     ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() < 1440"
@@ -126,11 +234,11 @@
         },
 
         "usage": {
-          ".read": "auth != null",
           "$deviceId": {
             "$slotId": {
               "$eventId": {
-                ".write": "auth != null && !data.exists()",
+                "//": "Append-only: an existing event can never be rewritten.",
+                ".write": "auth != null && !data.exists() && root.child('homes').child($homeId).child('members').child(auth.uid).exists()",
                 "at": { ".validate": "newData.isNumber()" },
                 "event": {
                   ".validate": "newData.val() == 'ON' || newData.val() == 'OFF' || newData.val() == 'CUTOFF' || newData.val() == 'ERROR' || newData.val() == 'RECONNECT'"
@@ -147,9 +255,14 @@
         },
 
         "alerts": {
-          ".read": "auth != null",
           "$alertId": {
-            ".write": "auth != null && data.exists() && newData.exists() && newData.child('message').val() == data.child('message').val() && newData.child('at').val() == data.child('at').val() && newData.child('severity').val() == data.child('severity').val()",
+            "//": [
+              "Alerts are raised by the worker. A member may set acknowledged",
+              "and nothing else: the message, timestamp and severity must be",
+              "carried through unchanged, so an alert cannot be rewritten or",
+              "invented from a phone."
+            ],
+            ".write": "auth != null && root.child('homes').child($homeId).child('members').child(auth.uid).exists() && data.exists() && newData.exists() && newData.child('message').val() == data.child('message').val() && newData.child('at').val() == data.child('at').val() && newData.child('severity').val() == data.child('severity').val()",
             "acknowledged": { ".validate": "newData.isBoolean()" }
           }
         }

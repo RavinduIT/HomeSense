@@ -7,6 +7,7 @@ import app.cash.turbine.ReceiveTurbine
 import app.cash.turbine.test
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -87,8 +88,15 @@ class DefaultHomeRepositoryTest {
     @After
     fun tearDown() = db.close()
 
+    /**
+     * The repository is scoped to whichever household is active, so the tests
+     * supply that as a flow. [activeHome] lets a test emit null to represent a
+     * signed-out session and assert that the streams empty out.
+     */
+    private val activeHome = MutableStateFlow<String?>(HOME_ID)
+
     private fun repositoryOn(source: TestRemoteSource, scope: CoroutineScope) =
-        DefaultHomeRepository(source, db, scope, HOME_ID)
+        DefaultHomeRepository(source, db, scope, activeHome)
 
     /**
      * The repository's flows are `stateIn(..., emptyList())`, so the first
@@ -329,17 +337,55 @@ class DefaultHomeRepositoryTest {
     }
 
     @Test
-    fun `start signs in once even when called repeatedly`() = runTest {
-        val source = TestRemoteSource()
+    fun `signing out empties every stream`() = runTest {
+        val source = TestRemoteSource(initialDevices = listOf(iron, gangBox))
         val repository = repositoryOn(source, backgroundScope)
+        repository.awaitLoaded()
 
-        repository.start()
-        repository.start()
-        repository.start()
-        // start() launches the sign-in; let the scheduled coroutines run.
-        runCurrent()
+        repository.devices.test {
+            awaitUntil { it.isNotEmpty() }
 
-        assertEquals(1, source.signInCount)
+            // A null active household is what a signed-out session produces.
+            activeHome.value = null
+
+            assertEquals(emptyList<Device>(), awaitUntil { it.isEmpty() })
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `a write with no active household is dropped rather than misdirected`() = runTest {
+        val source = TestRemoteSource(initialDevices = listOf(iron))
+        val repository = repositoryOn(source, backgroundScope)
+        repository.awaitLoaded()
+
+        activeHome.value = null
+        repository.devices.first { it.isEmpty() }
+
+        repository.setSlotDesiredState("dev-iron", "s1", desired = true)
+
+        // The important property is that it did not fall back to some other
+        // household: no write reached the source at all.
+        assertTrue("writes were: ${source.writes}", source.writes.isEmpty())
+        assertTrue(source.appendedEvents.isEmpty())
+    }
+
+    @Test
+    fun `switching household stops serving the previous one`() = runTest {
+        val source = TestRemoteSource(initialDevices = listOf(iron), servesHomeId = HOME_ID)
+        val repository = repositoryOn(source, backgroundScope)
+        repository.awaitLoaded()
+
+        repository.devices.test {
+            awaitUntil { it.isNotEmpty() }
+
+            // A household this source holds no data for. If the repository had
+            // kept its previous subscription, the old devices would persist.
+            activeHome.value = "another-home"
+
+            assertEquals(emptyList<Device>(), awaitUntil { it.isEmpty() })
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     private companion object {
