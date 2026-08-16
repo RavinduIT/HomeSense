@@ -80,16 +80,34 @@ class AppContainer(private val context: Context) {
 
     private fun createFirebaseDatabase(): FirebaseDatabase? {
         if (BuildConfig.USE_FAKE_BACKEND) return null
+
         return runCatching {
-            FirebaseDatabase.getInstance().apply {
+            // An explicit URL takes precedence over google-services.json, which
+            // carries `firebase_url` only if it was downloaded after the
+            // Realtime Database was created. Without either, the SDK throws,
+            // and the message it produces does not say what to do about it.
+            val configured = BuildConfig.DATABASE_URL
+            val database = if (configured.isNotBlank()) {
+                FirebaseDatabase.getInstance(configured)
+            } else {
+                FirebaseDatabase.getInstance()
+            }
+
+            database.apply {
                 // Must be set before any other database call. Keeps the last
                 // known tree on disk so the application renders immediately on
                 // launch and queues writes made while offline.
                 runCatching { setPersistenceEnabled(true) }
             }
         }.getOrElse { error ->
-            // Reached when google-services.json is absent from a live build.
-            Log.w(TAG, "Firebase unavailable; falling back to the in-memory backend", error)
+            Log.w(
+                TAG,
+                "No Realtime Database is configured, so the in-memory backend is being used. " +
+                    "Either create the Realtime Database and download google-services.json " +
+                    "again so that it contains firebase_url, or set rtdb.url in " +
+                    "local.properties. See docs/FIREBASE_SETUP.md.",
+                error,
+            )
             null
         }
     }

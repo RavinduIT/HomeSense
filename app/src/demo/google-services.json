@@ -1,0 +1,47 @@
+{
+  "_comment": [
+    "PLACEHOLDER. Not a credential, and not connected to any Firebase project.",
+    "",
+    "The google-services plugin refuses to configure a variant whose package",
+    "name it cannot find, and the demo flavour's package is",
+    "lk.ac.ucsc.scs3311.smarthome.demo. That flavour never contacts Firebase:",
+    "AppContainer returns the in-memory backend when BuildConfig.USE_FAKE_BACKEND",
+    "is set, before any Firebase class is touched.",
+    "",
+    "This file exists only so the plugin has something to match on, which is why",
+    "it is committed rather than ignored. The plugin searches src/<flavour>/",
+    "before the module root, so the demo variant reads this and the live variant",
+    "reads app/google-services.json.",
+    "",
+    "Consequence: `assembleDemoDebug` works on a fresh checkout with no Firebase",
+    "project at all."
+  ],
+  "project_info": {
+    "project_number": "000000000000",
+    "project_id": "homesense-demo-placeholder",
+    "firebase_url": "https://homesense-demo-placeholder-default-rtdb.firebaseio.com",
+    "storage_bucket": "homesense-demo-placeholder.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "android_client_info": {
+          "package_name": "lk.ac.ucsc.scs3311.smarthome.demo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDemoPlaceholderKeyNotConnectedToAnyProject"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

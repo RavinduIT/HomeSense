@@ -1,5 +1,9 @@
 ### Secrets — never commit these. Templates are provided instead. ###
 google-services.json
+# Exception: the demo flavour's file is a placeholder for a variant that never
+# contacts Firebase. It exists so the google-services plugin has a package name
+# to match, and it holds no credential. See the comment inside it.
+!app/src/demo/google-services.json
 serviceAccountKey.json
 worker/serviceAccountKey.json
 worker/.env

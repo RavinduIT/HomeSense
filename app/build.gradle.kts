@@ -26,6 +26,27 @@ val keystoreProperties = Properties().apply {
         keystorePropertiesFile.inputStream().use { load(it) }
     }
 }
+
+val localPropertiesFile = rootProject.file("local.properties")
+val localProperties = Properties().apply {
+    if (localPropertiesFile.exists()) {
+        localPropertiesFile.inputStream().use { load(it) }
+    }
+}
+
+// Optional override for the Realtime Database URL.
+//
+// google-services.json only carries `firebase_url` once the Realtime Database
+// has been created, and a file downloaded before that step omits it entirely,
+// which fails at runtime rather than at build time. Supplying the URL here
+// makes the configuration explicit and survives a stale downloaded file.
+//
+//   local.properties:  rtdb.url=https://<project>-default-rtdb.<region>.firebasedatabase.app
+//   or:  ./gradlew assembleLiveDebug -PRTDB_URL=https://...
+val realtimeDatabaseUrl: String =
+    (project.findProperty("RTDB_URL") as String?)
+        ?: localProperties.getProperty("rtdb.url")
+        ?: ""
 val hasReleaseKeystore = keystoreProperties.containsKey("storeFile") &&
     rootProject.file(keystoreProperties.getProperty("storeFile")).exists()
 
@@ -42,6 +63,8 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+
+        buildConfigField("String", "DATABASE_URL", "\"$realtimeDatabaseUrl\"")
     }
 
     // `demo` runs entirely on a FakeRepository so the demo video can be recorded

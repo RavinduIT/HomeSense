@@ -10,37 +10,63 @@ in-memory backend and needs no Firebase project at all.
 
 | | |
 |---|---|
-| Project name | App-uni |
-| Project ID | `nappp-cd3d2` |
-| Project number | `738342783371` |
+| Project name | Smarthome |
+| Project ID | `smarthome-aa2f0` |
+| Project number | `612831885519` |
+| Realtime Database | `https://smarthome-aa2f0-default-rtdb.firebaseio.com` |
 
-## 1. Register the Android applications
+## 1. Register the Android application
 
-The `google-services` plugin matches on package name exactly. Both flavours must
-be registered, or the build fails with *No matching client found*.
+The `google-services` plugin matches on package name exactly, and fails the
+build with *No matching client found* if a variant's package is absent.
 
-Firebase console → Project settings → **Your apps** → Add app → Android:
+Firebase console → Project settings → **Your apps** → Add app → Android, using
+package name `lk.ac.ucsc.scs3311.smarthome`.
 
-| Package name | Purpose |
-|---|---|
-| `lk.ac.ucsc.scs3311.smarthome` | `live` flavour |
-| `lk.ac.ucsc.scs3311.smarthome.demo` | `demo` flavour |
+Only the `live` flavour needs registering. The `demo` flavour's package is
+`lk.ac.ucsc.scs3311.smarthome.demo`, and it is satisfied by the committed
+placeholder at `app/src/demo/google-services.json`. That flavour never contacts
+Firebase, so the placeholder holds no credential and exists purely to give the
+plugin a package name to match. Registering the demo package as a second
+application is also fine, and costs nothing.
 
-Two applications within one project is the normal arrangement and costs
-nothing. A nickname is optional. The SHA-1 fingerprint is only required for
-Google Sign-In, which this project does not use.
+The SHA-1 fingerprint is only required for Google Sign-In, which this project
+does not use.
 
 ## 2. Create the Realtime Database
 
 Build → **Realtime Database** → Create Database.
 
-- Location: **Singapore (`asia-southeast1`)** gives the lowest latency from Sri
-  Lanka. Any location works; note the URL either way.
+- Location: any. Singapore (`asia-southeast1`) gives the lowest latency from Sri
+  Lanka; the existing database is in `us-central1`, which is also fine.
 - Start in **locked mode**. The rules in `database.rules.json` replace the
   defaults at step 5.
 
-Until the database exists, `google-services.json` contains no `firebase_url`
-field and the application cannot connect.
+### If the configuration file has no database URL
+
+`google-services.json` carries `firebase_url` only if it was downloaded *after*
+the database was created. A file downloaded earlier omits it, and the failure
+appears at runtime rather than at build time.
+
+Either download the file again, or state the URL explicitly in
+`local.properties`:
+
+```properties
+rtdb.url=https://smarthome-aa2f0-default-rtdb.firebaseio.com
+```
+
+An explicit value takes precedence, so it remains correct even after a newer
+file is downloaded. The equivalent for a one-off build is
+`./gradlew assembleLiveDebug -PRTDB_URL=https://...`.
+
+### A note on Firestore
+
+Firestore is not used. The project is built on Realtime Database for its
+per-child listeners and `onDisconnect()` support, which is what makes a toggle
+grid responsive and makes `DISCONNECTED` an observation rather than an
+inference; the reasoning is recorded in `docs/adr/0001`. The simulator and the
+worker are both built against that API. Having Firestore enabled in the console
+is harmless — it simply goes unused.
 
 ## 3. Enable sign-in methods
 
