@@ -46,7 +46,7 @@ that separation.
 | `worker/` | Safety worker — Node, TypeScript, `firebase-admin` |
 | `simulator/` | Hardware simulator — a single self-contained HTML page |
 | `apk/` | Signed release builds |
-| `docs/` | Report, data contract, demonstration script, defence notes, decision records |
+| `docs/` | Technical report, data contract, setup guide, decision records |
 | `database.rules.json` | Database security rules |
 
 `docs/SCHEMA.md` defines the data contract shared by all three runtimes and is
@@ -76,7 +76,7 @@ file containing `sdk.dir=/path/to/sdk`.
 ### Running the tests
 
 ```bash
-./gradlew testDemoDebugUnitTest    # 73 application tests
+./gradlew testDemoDebugUnitTest    # 75 application tests
 cd worker && npm ci && npm test    # 40 worker tests, no credentials required
 ```
 
@@ -88,21 +88,26 @@ The complete system consists of three processes sharing one Realtime Database.
 
 ### 1. Firebase project
 
-Follow `docs/FIREBASE_SETUP.md`, which covers creating the project, adding a
-Realtime Database, enabling anonymous authentication and deploying
-`database.rules.json`. All of this is available on the free Spark plan.
+`app/google-services.json` is committed, so the application builds and connects
+without further configuration. It holds identifiers rather than credentials;
+what protects the data is `database.rules.json`.
 
-No credentials are committed to the repository. Copy each template:
+To point the project at a different Firebase project, follow
+`docs/FIREBASE_SETUP.md`. All of it is available on the free Spark plan.
+
+Genuine credentials are not committed. Copy each template:
 
 | Template | Destination |
 |---|---|
-| `app/google-services.json.template` | `app/google-services.json` |
 | `worker/.env.template` | `worker/.env` |
 | `simulator/firebase-config.template.js` | `simulator/firebase-config.js` |
 | `keystore.properties.template` | `keystore.properties` (release builds only) |
 
-The `homeId` value must match across all three components. The default is
-`home-1`.
+A service-account key is also required by the worker, at
+`worker/serviceAccountKey.json`.
+
+The `homeId` in the simulator's configuration must name a household that exists;
+create one in the application first.
 
 ### 2. Safety worker
 
@@ -130,6 +135,10 @@ Use the *Seed demo home* control once to create the sample house.
 ```bash
 ./gradlew assembleLiveDebug
 ```
+
+On first run, register an account or continue as a guest, then create a
+household. A guest session can be converted to a permanent account later from
+the Account tab without losing anything.
 
 ---
 
