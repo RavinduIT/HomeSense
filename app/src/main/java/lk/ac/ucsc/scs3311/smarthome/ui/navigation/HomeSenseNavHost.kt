@@ -2,6 +2,7 @@ package lk.ac.ucsc.scs3311.smarthome.ui.navigation
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Notifications
@@ -27,6 +28,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import lk.ac.ucsc.scs3311.smarthome.ui.account.AccountScreen
 import lk.ac.ucsc.scs3311.smarthome.ui.alerts.AlertsScreen
 import lk.ac.ucsc.scs3311.smarthome.ui.alerts.AlertsViewModel
 import lk.ac.ucsc.scs3311.smarthome.ui.device.DeviceControlSheet
@@ -40,6 +42,7 @@ object Routes {
     const val PLAN = "plan/{floorId}"
     const val ALERTS = "alerts"
     const val REPORT = "report"
+    const val ACCOUNT = "account"
 
     fun plan(floorId: String) = "plan/$floorId"
 
@@ -56,6 +59,7 @@ private val topLevelDestinations = listOf(
     TopLevelDestination(Routes.FLOORS, "Floors", Icons.Default.Layers),
     TopLevelDestination(Routes.ALERTS, "Alerts", Icons.Default.Notifications),
     TopLevelDestination(Routes.REPORT, "Usage", Icons.Default.Insights),
+    TopLevelDestination(Routes.ACCOUNT, "Account", Icons.Default.AccountCircle),
 )
 
 @Composable
@@ -144,6 +148,8 @@ fun HomeSenseNavHost(
             composable(Routes.ALERTS) { AlertsScreen(viewModel = alertsViewModel) }
 
             composable(Routes.REPORT) { ReportScreen() }
+
+            composable(Routes.ACCOUNT) { AccountScreen() }
         }
     }
 }
