@@ -252,6 +252,47 @@ on the same device. And push notifications are published to a topic named after
 the household rather than to a single shared topic, which would have delivered
 every family's cut-off alerts to every installation.}
 
+\subsubsection{Session lifecycle}
+
+The destination is derived from session state rather than navigated to. A gate
+above the navigation graph resolves three cases: the persisted session is still
+being restored; there is no session; or there is a session but no household, in
+which case onboarding is shown. Only when both an account and a household exist
+is the dashboard composed, so no screen has to defend against a null session.
+
+Signing out therefore performs no navigation. The session state changes, the
+gate recomposes, and the whole graph is discarded together with the view models
+holding the previous account's data.
+
+Restoration is distinguished from absence for the same reason. Firebase restores
+a persisted session asynchronously, so treating ``not yet known'' as ``signed
+out'' would show the sign-in screen briefly on every launch by an already
+signed-in user.
+
+\subsection{Verifying the enforcement}
+
+The rules were tested against the deployed project rather than assumed correct.
+Table \ref{tab:rulescheck} lists the checks and their outcomes.
+
+\begin{table}[h]
+\centering
+\caption{Security rules verified against the deployed database}
+\label{tab:rulescheck}
+\begin{tabular}{@{}L{7.4cm}L{3.4cm}L{3.4cm}@{}}
+\toprule
+\textbf{Operation} & \textbf{Expected} & \textbf{Observed} \\
+\midrule
+Read any node without authenticating & Denied & \code{401} \\
+Owner creates a household & Permitted & \code{200} \\
+Owner reads that household & Permitted & \code{200} \\
+A different account reads that household & Denied & \code{401} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The fourth row is the one that matters: tenancy is not merely intended but
+observed, since a second authenticated account was refused.
+
 \subsection{Offline behaviour and usage logging}
 
 Realtime Database disk persistence is enabled, so the most recently received
@@ -642,10 +683,10 @@ application code over a database snapshot.
 \toprule
 \textbf{Suite} & \textbf{Tests} & \textbf{Coverage} \\
 \midrule
-Application unit tests & 73 & Grid mapping, wire format, repository propagation, Room aggregation, CSV escaping, schedule windows \\
+Application unit tests & 75 & Grid mapping, wire format, repository propagation and session teardown, Room aggregation, CSV escaping, schedule windows \\
 Worker rule tests      & 40 & Cut-off timing under a controlled clock, restart recovery, status precedence, schedule boundaries \\
 \midrule
-\textbf{Total}         & \textbf{113} & \\
+\textbf{Total}         & \textbf{115} & \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -690,6 +731,8 @@ R14 & Cut-off raises an alert & \code{notifications.ts}, \code{ui/alerts/} & Dem
 R15 & Usage reporting & \code{ui/report/}, \code{UsageDao} & \code{UsageDaoTest} and others & 18:00 \\
 R16 & Web simulator reflecting updates & \code{simulator/index.html} & Demonstration \textbf{(M)} & 10:30 \\
 R17 & Simulator listens to the database & \code{simulator/index.html} & Demonstration \textbf{(M)} & 6:00 \\
+A1  & Accounts, sign-in and sign-out & \code{data/auth/}, \code{ui/account/} & Verified against the deployed project & --- \
+A2  & Household tenancy and roles & \code{database.rules.json} & Table ef{tab:rulescheck} & --- \
 D1  & Repository and APK & \code{apk/HomeSense-1.0.apk} & Signature verified & --- \\
 D2  & Technical report & This document & --- & --- \\
 D3  & Demonstration, three members & Demonstration script & --- & 0:00 \\

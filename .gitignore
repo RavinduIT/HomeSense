@@ -52,3 +52,14 @@ worker/coverage/
 *.log
 .env
 .env.local
+
+### Internal preparation material ###
+#
+# The demonstration script and the defence notes are rehearsal material for the
+# team, not submitted deliverables. They are kept out of the repository because
+# it is shared with the course instructor. Both remain on disk and are built
+# with: docs/report/build.ps1 -IncludeInternal
+docs/report/demonstration-script.tex
+docs/report/defence-notes.tex
+docs/HomeSense-Demonstration-Script.pdf
+docs/HomeSense-Defence-Notes.pdf

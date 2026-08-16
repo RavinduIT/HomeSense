@@ -172,8 +172,6 @@ Typeset with LaTeX; sources are in `docs/report/` and build with
 | Document | Contents |
 |---|---|
 | [Technical Report](docs/HomeSense-Technical-Report.pdf) | Synchronising mechanism, floor representation and simulator operations, with architecture, verification, the requirement traceability matrix and limitations as appendices |
-| [Demonstration Script](docs/HomeSense-Demonstration-Script.pdf) | Timed run-sheet in three presenter blocks, with priority sequences and contingencies |
-| [Defence Notes](docs/HomeSense-Defence-Notes.pdf) | Preparation for the individual oral defence |
 
 ### Repository documentation
 
@@ -199,9 +197,9 @@ sharp at any screen density.
 
 | Suite | Tests |
 |---|---|
-| Application unit tests | 73 |
+| Application unit tests | 75 |
 | Worker rule tests | 40 |
-| Total | 113 |
+| Total | 115 |
 
 The continuous integration workflow in `.github/workflows/build.yml` runs both
 suites on every push, from a checkout containing no credentials.

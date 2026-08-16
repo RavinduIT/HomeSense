@@ -12,7 +12,8 @@
 #   .\build.ps1 -Tectonic C:\tools\tectonic\tectonic.exe
 
 param(
-    [string]$Tectonic = 'tectonic'
+    [string]$Tectonic = 'tectonic',
+    [switch]$IncludeInternal
 )
 
 # Deliberately not 'Stop': Tectonic writes a harmless Fontconfig notice to
@@ -21,11 +22,19 @@ param(
 $ErrorActionPreference = 'Continue'
 Set-Location $PSScriptRoot
 
+# Only the technical report is a submitted deliverable. The demonstration
+# script and the defence notes are internal preparation material: they are kept
+# out of the repository, and out of this list, because the repository is shared
+# with the course instructor. Build them with -IncludeInternal when preparing
+# for the demonstration.
 $documents = @(
-    @{ Source = 'report.tex';                Output = 'HomeSense-Technical-Report.pdf' },
-    @{ Source = 'demonstration-script.tex';  Output = 'HomeSense-Demonstration-Script.pdf' },
-    @{ Source = 'defence-notes.tex';         Output = 'HomeSense-Defence-Notes.pdf' }
+    @{ Source = 'report.tex'; Output = 'HomeSense-Technical-Report.pdf' }
 )
+
+if ($IncludeInternal) {
+    $documents += @{ Source = 'demonstration-script.tex'; Output = 'HomeSense-Demonstration-Script.pdf' }
+    $documents += @{ Source = 'defence-notes.tex';        Output = 'HomeSense-Defence-Notes.pdf' }
+}
 
 if (-not (Get-Command $Tectonic -ErrorAction SilentlyContinue)) {
     Write-Error "Tectonic was not found. Install it, or pass -Tectonic <path to tectonic.exe>."
