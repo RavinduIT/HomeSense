@@ -12,23 +12,22 @@
 TECTONIC ?= tectonic
 OUT      := ..
 
-.PHONY: all clean
+.PHONY: all internal clean
 
-all: $(OUT)/HomeSense-Technical-Report.pdf \
-     $(OUT)/HomeSense-Demonstration-Script.pdf \
-     $(OUT)/HomeSense-Defence-Notes.pdf
+all: $(OUT)/HomeSense-Technical-Report.pdf
 
 $(OUT)/HomeSense-Technical-Report.pdf: report.tex preamble.tex
 	$(TECTONIC) -X compile $<
 	mv report.pdf $@
 
-$(OUT)/HomeSense-Demonstration-Script.pdf: demonstration-script.tex preamble.tex
-	$(TECTONIC) -X compile $<
-	mv demonstration-script.pdf $@
-
-$(OUT)/HomeSense-Defence-Notes.pdf: defence-notes.tex preamble.tex
-	$(TECTONIC) -X compile $<
-	mv defence-notes.pdf $@
+# Internal preparation material, kept out of version control because the
+# repository is shared with the course instructor. Present only on a team
+# member's machine.
+internal:
+	@test -f demonstration-script.tex && $(TECTONIC) -X compile demonstration-script.tex \
+	  && mv demonstration-script.pdf $(OUT)/HomeSense-Demonstration-Script.pdf || true
+	@test -f defence-notes.tex && $(TECTONIC) -X compile defence-notes.tex \
+	  && mv defence-notes.pdf $(OUT)/HomeSense-Defence-Notes.pdf || true
 
 clean:
 	rm -f *.aux *.log *.out *.toc *.pdf

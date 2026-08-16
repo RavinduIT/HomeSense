@@ -6,8 +6,11 @@ LaTeX sources for the three project documents. The built PDFs are written to
 | Source | Output |
 |---|---|
 | `report.tex` | `docs/HomeSense-Technical-Report.pdf` |
-| `demonstration-script.tex` | `docs/HomeSense-Demonstration-Script.pdf` |
-| `defence-notes.tex` | `docs/HomeSense-Defence-Notes.pdf` |
+
+The demonstration script and the defence notes are built from sources kept
+outside version control, since this repository is shared with the course
+instructor. On a team member's machine they are built with
+`build.ps1 -IncludeInternal`, or `make internal`.
 
 `preamble.tex` holds the shared page layout, typography, table and listing
 styles, and the title page, so the three documents remain consistent.
