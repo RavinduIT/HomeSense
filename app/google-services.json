@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "612831885519",
+    "project_id": "smarthome-aa2f0",
+    "firebase_url": "https://smarthome-aa2f0-default-rtdb.firebaseio.com",
+    "storage_bucket": "smarthome-aa2f0.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:612831885519:android:2431fa2c0b0de7bd431fba",
+        "android_client_info": {
+          "package_name": "lk.ac.ucsc.scs3311.smarthome"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAA0JtaSLjXt4Qwh069DmULoHMHbmv6Vmo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

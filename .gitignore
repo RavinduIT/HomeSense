@@ -1,22 +1,31 @@
-### Secrets — never commit these. Templates are provided instead. ###
-google-services.json
-# Exception: the demo flavour's file is a placeholder for a variant that never
-# contacts Firebase. It exists so the google-services plugin has a package name
-# to match, and it holds no credential. See the comment inside it.
-!app/src/demo/google-services.json
+### Credentials — never commit these ###
+#
+# The distinction that matters is between an identifier and a credential.
+#
+# google-services.json is NOT here. It holds a project id, an app id and an
+# Android API key, all of which are extractable from any distributed APK in
+# seconds. They identify the project; they authorise nothing. What protects the
+# data is database.rules.json. Firebase's own guidance is to commit it, and
+# without it neither continuous integration nor a teammate's checkout can build
+# the live flavour.
+#
+# The three below are genuine credentials. A service-account key grants full
+# administrative access and bypasses every security rule; a keystore lets its
+# holder sign an application as though they were its author.
 serviceAccountKey.json
 worker/serviceAccountKey.json
-worker/.env
-simulator/firebase-config.js
 *.keystore
 *.jks
 keystore.properties
+
+### Machine-local ###
 local.properties
+worker/.env
+simulator/firebase-config.js
 
 ### Android / Gradle ###
 *.iml
 .gradle/
-/local.properties
 .idea/
 .DS_Store
 build/
@@ -29,9 +38,8 @@ release/
 *.ap_
 *.dex
 
-# The submitted builds in apk/ are a deliverable and are committed
-# deliberately, so that the repository itself carries the application.
-# Build output elsewhere remains excluded by the rule above.
+# Exception: the submitted builds in apk/ are a deliverable and are committed
+# deliberately. Build output elsewhere remains excluded by the rule above.
 !apk/*.apk
 
 ### Node ###
