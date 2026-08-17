@@ -144,6 +144,7 @@
       @keyframes sweep { from { top: -22%; } to { top: 100%; } }
       .chaos { display: flex; gap: 6px; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: 10px; }
       .empty { color: var(--muted); padding: 40px; text-align: center; }
+      .hint { color: var(--muted); font-size: 11px; align-self: center; }
       code { background: #0b1014; padding: 2px 5px; border-radius: 4px; font-size: 12px; }
       .banner {
         margin: 0 0 18px; padding: 12px 14px; border-radius: 10px;
@@ -729,7 +730,8 @@
                   ${heat > 0 ? `<div class="heat"><i style="width:${heat.toFixed(0)}%"></i></div>` : ''}
                 </div>
                 <span class="badge ${status}">${status}</span>
-                <button onclick="physicalToggle('${id}','${slotId}')" title="Press the physical switch">⏻</button>
+                <button onclick="physicalToggle('${id}','${slotId}')"
+                        title="Press the physical switch for ${escapeHtml(slot.label || slotId)}">⏻</button>
               </div>`;
           }
           body += '</div>';
@@ -748,7 +750,18 @@
               <button class="warn ${isUnplugged ? 'active' : ''}" onclick="toggleUnplug('${id}')">
                 ${isUnplugged ? 'Plug back in' : 'Unplug'}
               </button>
-              ${slotIds.length > 0 ? `<button onclick="physicalToggle('${id}','${slotIds[0]}')">Physical toggle</button>` : ''}
+              ${
+                // A single-slot device has exactly one switch to press, so the
+                // shortcut is unambiguous. On a gang box it is not: the button
+                // used to press the first switch silently, which looks like the
+                // control is broken for every other switch. Each row carries its
+                // own button, so the footer points at those instead.
+                slotIds.length === 1
+                  ? `<button onclick="physicalToggle('${id}','${slotIds[0]}')">Physical toggle</button>`
+                  : slotIds.length > 1
+                    ? `<span class="hint">press ⏻ on a switch above</span>`
+                    : ''
+              }
             </div>
           </article>`;
       }
