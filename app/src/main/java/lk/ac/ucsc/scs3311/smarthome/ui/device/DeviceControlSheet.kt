@@ -41,7 +41,13 @@ fun DeviceControlSheet(
     deviceId: String,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: DeviceViewModel = viewModel(factory = DeviceViewModel.factory(deviceId)),
+    // Keyed by device. Without a key, Compose derives one from the ViewModel
+    // class alone, so opening a second device within the same navigation entry
+    // would return the first device's ViewModel, complete with its identifier.
+    viewModel: DeviceViewModel = viewModel(
+        key = deviceId,
+        factory = DeviceViewModel.factory(deviceId),
+    ),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)

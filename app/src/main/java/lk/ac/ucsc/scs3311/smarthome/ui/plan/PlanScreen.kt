@@ -71,7 +71,12 @@ fun PlanScreen(
     onBack: () -> Unit,
     deviceSheet: @Composable (deviceId: String, onDismiss: () -> Unit) -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: PlanViewModel = viewModel(factory = PlanViewModel.factory(floorId)),
+    // Keyed by floor. Separate navigation entries usually give each floor its
+    // own ViewModel store, but keying does not depend on that holding.
+    viewModel: PlanViewModel = viewModel(
+        key = floorId,
+        factory = PlanViewModel.factory(floorId),
+    ),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val dialog by viewModel.dialog.collectAsStateWithLifecycle()
