@@ -17,8 +17,12 @@ window.HOMESENSE_CONFIG = {
     appId: '1:000000000000:web:0000000000000000000000',
   },
 
-  // Must match the app's home id. The live flavour uses 'home-1'.
-  homeId: 'home-1',
+  // Optional. The simulator signs in with the same account as the mobile
+  // application and discovers the households that account belongs to, so this
+  // is normally left null: it only pre-selects one when an account belongs to
+  // several. A household identifier is generated when the household is created
+  // in the application, so it cannot be known in advance.
+  homeId: null,
 
   // How often each simulated node sends a heartbeat, in milliseconds.
   // The worker marks a node DISCONNECTED after 15s of silence, so this must

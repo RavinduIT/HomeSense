@@ -53,18 +53,48 @@
       .dot.ok { background: var(--on); box-shadow: 0 0 8px var(--on); }
       .dot.bad { background: var(--error); }
       .dot.warn { background: var(--offline); }
-      button {
-        font: inherit; font-size: 12px; font-weight: 600;
+      button, select, input {
+        font: inherit; font-size: 12px;
         color: var(--text); background: var(--panel-2);
         border: 1px solid var(--line); border-radius: 8px;
-        padding: 7px 12px; cursor: pointer;
+        padding: 7px 12px;
       }
-      button:hover { border-color: var(--accent); }
-      button:disabled { opacity: .4; cursor: not-allowed; }
+      button { font-weight: 600; cursor: pointer; }
+      button:hover:not(:disabled) { border-color: var(--accent); }
+      button:disabled { opacity: .45; cursor: not-allowed; }
+      button.primary { background: #12494c; border-color: var(--accent); color: #d6fbfd; }
       button.danger { border-color: #5a2b2b; color: #ffb3b3; }
       button.warn { border-color: #5a4620; color: #ffd79a; }
       button.active { background: #33261a; border-color: var(--offline); color: #ffd79a; }
+      select { padding: 6px 10px; }
       main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+
+      /* ---- sign-in ---- */
+      .auth-wrap { max-width: 380px; margin: 8vh auto; }
+      .auth-card {
+        background: var(--panel); border: 1px solid var(--line);
+        border-radius: 14px; padding: 26px;
+      }
+      .auth-card h2 { margin: 0 0 4px; font-size: 18px; }
+      .auth-card p.lead { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
+      .field { margin-bottom: 12px; }
+      .field label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+      .field input { width: 100%; padding: 10px 12px; background: #0e141a; }
+      .auth-card button { width: 100%; padding: 11px; margin-top: 6px; }
+      .note {
+        margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line);
+        color: var(--muted); font-size: 12px;
+      }
+
+      /* ---- households ---- */
+      .home-list { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+      .home-option {
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        text-align: left; padding: 12px 14px;
+      }
+      .home-option small { color: var(--muted); font-weight: 400; }
+
+      /* ---- devices ---- */
       .floor { margin-bottom: 28px; }
       .floor h2 {
         font-size: 13px; text-transform: uppercase; letter-spacing: 1.2px;
@@ -95,7 +125,6 @@
       .badge.OFF { background: rgba(107,122,137,.18); color: var(--off); }
       .badge.ERROR { background: rgba(255,107,107,.16); color: var(--error); }
       .badge.DISCONNECTED { background: rgba(240,169,44,.16); color: var(--offline); }
-      /* The lamp is the point of the simulator: the appliance visibly changes. */
       .lamp {
         width: 26px; height: 26px; border-radius: 50%; flex: none;
         background: #2a3540; border: 1px solid var(--line);
@@ -126,6 +155,7 @@
         border-radius: 10px; background: #0b1014; max-height: 160px; overflow: auto;
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--muted);
       }
+      .hidden { display: none !important; }
     </style>
   </head>
 
@@ -133,35 +163,82 @@
     <header>
       <div>
         <h1>HomeSense · hardware simulator</h1>
-        <div class="sub">
-          The physical appliances. Listens to the database and reflects it.
-        </div>
+        <div class="sub">The physical appliances. Listens to the database and reflects it.</div>
       </div>
       <div class="spacer"></div>
       <span class="pill"><span class="dot" id="dot-db"></span><span id="txt-db">connecting…</span></span>
-      <span class="pill"><span class="dot" id="dot-worker"></span><span id="txt-worker">worker: unknown</span></span>
-      <button id="btn-seed">Seed demo home</button>
+      <span class="pill" id="pill-worker"><span class="dot" id="dot-worker"></span><span id="txt-worker">worker: unknown</span></span>
+      <select id="home-select" class="hidden" title="Household"></select>
+      <span class="pill hidden" id="pill-account"></span>
+      <button id="btn-seed" class="hidden">Seed demo home</button>
+      <button id="btn-signout" class="hidden">Sign out</button>
     </header>
 
     <main>
       <div id="banner"></div>
-      <div id="floors"></div>
-      <div class="log" id="log"></div>
+
+      <!-- Sign-in. The simulator authenticates as a household member, exactly
+           as the application does, because the security rules confine a
+           household to its members. -->
+      <section id="view-auth" class="auth-wrap hidden">
+        <div class="auth-card">
+          <h2>Sign in</h2>
+          <p class="lead">
+            Use the same account as the mobile application. The simulator acts
+            as hardware belonging to your household, so it has to be a member
+            of it.
+          </p>
+          <form id="form-auth">
+            <div class="field">
+              <label for="in-email">Email address</label>
+              <input id="in-email" type="email" autocomplete="username" required />
+            </div>
+            <div class="field">
+              <label for="in-password">Password</label>
+              <input id="in-password" type="password" autocomplete="current-password" required />
+            </div>
+            <button class="primary" type="submit" id="btn-signin">Sign in</button>
+          </form>
+          <div class="note">
+            No account yet? Create one in the mobile application, then create a
+            household there. This page controls the appliances in a household
+            rather than creating one.
+          </div>
+        </div>
+      </section>
+
+      <!-- Household choice, shown only when the account belongs to several. -->
+      <section id="view-homes" class="auth-wrap hidden">
+        <div class="auth-card">
+          <h2>Choose a household</h2>
+          <p class="lead">This account belongs to more than one.</p>
+          <div class="home-list" id="home-list"></div>
+        </div>
+      </section>
+
+      <section id="view-devices" class="hidden">
+        <div id="floors"></div>
+        <div class="log" id="log"></div>
+      </section>
     </main>
 
     <script type="module">
       import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js';
       import {
         getAuth,
-        signInAnonymously,
+        signInWithEmailAndPassword,
+        signOut,
+        onAuthStateChanged,
       } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js';
       import {
         getDatabase,
         ref,
+        get,
         onValue,
         onChildAdded,
         onChildChanged,
         onChildRemoved,
+        off,
         update,
         set,
         push,
@@ -170,7 +247,7 @@
       } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-database.js';
 
       // ---------------------------------------------------------------------
-      // Config
+      // Configuration
       // ---------------------------------------------------------------------
       const cfg = window.HOMESENSE_CONFIG;
       const banner = document.getElementById('banner');
@@ -183,16 +260,25 @@
         while (logEl.childElementCount > 120) logEl.lastElementChild.remove();
       }
 
+      function showBanner(html, isError = false) {
+        banner.className = isError ? 'banner err' : 'banner';
+        banner.innerHTML = html;
+      }
+      function clearBanner() {
+        banner.className = '';
+        banner.innerHTML = '';
+      }
+
       if (!cfg) {
-        banner.className = 'banner err';
-        banner.innerHTML =
+        showBanner(
           'No configuration found. Copy <code>firebase-config.template.js</code> to ' +
-          '<code>firebase-config.js</code> and fill in your project details — see ' +
-          '<code>docs/FIREBASE_SETUP.md</code>.';
+            '<code>firebase-config.js</code> and fill in your project details — see ' +
+            '<code>docs/FIREBASE_SETUP.md</code>.',
+          true,
+        );
         throw new Error('missing firebase-config.js');
       }
 
-      const HOME = cfg.homeId;
       const HEARTBEAT_MS = cfg.heartbeatMs ?? 5000;
       const ACTUATION_MS = cfg.actuationMs ?? 400;
 
@@ -200,19 +286,43 @@
       const auth = getAuth(app);
       const db = getDatabase(app);
 
-      const homePath = `homes/${HOME}`;
+      // ---------------------------------------------------------------------
+      // State
+      // ---------------------------------------------------------------------
+      let account = null;
+      let homeId = null;
+      let memberships = [];
 
-      // ---------------------------------------------------------------------
-      // Local "hardware" state — what a real node would keep in RAM
-      // ---------------------------------------------------------------------
-      const devices = new Map(); // id -> device data from the database
+      const devices = new Map();
       const floors = new Map();
-      const faulted = new Set(); // relay refuses to obey
-      const unplugged = new Set(); // node stopped sending heartbeats
-      const pendingActuation = new Map(); // `${deviceId}/${slotId}` -> timeout id
+      const faulted = new Set();
+      const unplugged = new Set();
+      const pendingActuation = new Map();
+
+      /** Listeners currently attached, so a household switch can detach them. */
+      let attached = [];
+
+      const views = {
+        auth: document.getElementById('view-auth'),
+        homes: document.getElementById('view-homes'),
+        devices: document.getElementById('view-devices'),
+      };
+
+      function showView(name) {
+        Object.entries(views).forEach(([key, el]) =>
+          el.classList.toggle('hidden', key !== name),
+        );
+        const signedIn = name !== 'auth';
+        document.getElementById('btn-signout').classList.toggle('hidden', !signedIn);
+        document.getElementById('pill-account').classList.toggle('hidden', !signedIn);
+        document.getElementById('btn-seed').classList.toggle('hidden', name !== 'devices');
+        document
+          .getElementById('home-select')
+          .classList.toggle('hidden', name !== 'devices' || memberships.length < 2);
+      }
 
       // ---------------------------------------------------------------------
-      // Connection + worker status
+      // Connection and worker status
       // ---------------------------------------------------------------------
       const dotDb = document.getElementById('dot-db');
       const txtDb = document.getElementById('txt-db');
@@ -223,65 +333,222 @@
         const connected = snap.val() === true;
         dotDb.className = `dot ${connected ? 'ok' : 'bad'}`;
         txtDb.textContent = connected ? 'database connected' : 'disconnected';
-        if (connected) {
-          log('connected to Realtime Database');
-          armDisconnectHandlers();
-        }
-      });
-
-      // The worker writes its own heartbeat. Without it running, nothing derives
-      // `status`, so every badge would sit on its last value - it is worth
-      // saying so plainly rather than letting a demo look broken.
-      onValue(ref(db, `${homePath}/meta/workerLastSeen`), (snap) => {
-        const last = snap.val() || 0;
-        const age = Date.now() - last;
-        const alive = last > 0 && age < 30000;
-        dotWorker.className = `dot ${alive ? 'ok' : 'warn'}`;
-        txtWorker.textContent = alive ? 'safety worker: online' : 'safety worker: NOT running';
-        if (!alive) {
-          banner.className = 'banner';
-          banner.innerHTML =
-            'The safety worker is not running, so no one is deriving ' +
-            '<code>status</code>, enforcing <code>max_on_duration</code> or ' +
-            'marking nodes <code>DISCONNECTED</code>. Start it with ' +
-            '<code>npm start</code> in <code>/worker</code>.';
-        } else if (banner.className === 'banner') {
-          banner.className = '';
-          banner.innerHTML = '';
-        }
+        if (connected && homeId) armDisconnectHandlers();
       });
 
       // ---------------------------------------------------------------------
-      // Listeners — per child, exactly as the app does
+      // Authentication
       // ---------------------------------------------------------------------
-      onValue(ref(db, `${homePath}/floors`), (snap) => {
+      document.getElementById('form-auth').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const button = document.getElementById('btn-signin');
+        button.disabled = true;
+        button.textContent = 'Signing in…';
+        clearBanner();
+        try {
+          await signInWithEmailAndPassword(
+            auth,
+            document.getElementById('in-email').value.trim(),
+            document.getElementById('in-password').value,
+          );
+        } catch (error) {
+          // Firebase reports a wrong address and a wrong password identically,
+          // which is deliberate on its part and repeated here.
+          const message = /invalid-credential|wrong-password|user-not-found/.test(error.code)
+            ? 'Incorrect email address or password.'
+            : error.message;
+          showBanner(message, true);
+        } finally {
+          button.disabled = false;
+          button.textContent = 'Sign in';
+        }
+      });
+
+      document.getElementById('btn-signout').addEventListener('click', () => signOut(auth));
+
+      onAuthStateChanged(auth, async (user) => {
+        detachHome();
+        account = user;
+
+        if (!user) {
+          homeId = null;
+          memberships = [];
+          showView('auth');
+          return;
+        }
+
+        document.getElementById('pill-account').textContent = user.email ?? 'signed in';
+        await loadMemberships(user.uid);
+      });
+
+      /**
+       * Discovers the households this account belongs to.
+       *
+       * Read from /users/{uid}/homes rather than by scanning /homes, because a
+       * client may only read a household it is a member of. This index is what
+       * makes discovery possible without reading anything it does not own.
+       */
+      async function loadMemberships(uid) {
+        try {
+          const snapshot = await get(ref(db, `users/${uid}/homes`));
+          const raw = snapshot.val() ?? {};
+          memberships = Object.entries(raw).map(([id, value]) => ({
+            id,
+            name: value?.homeName ?? id,
+            role: value?.role ?? 'MEMBER',
+          }));
+        } catch (error) {
+          showBanner(`Could not read your households: ${error.message}`, true);
+          memberships = [];
+        }
+
+        if (memberships.length === 0) {
+          showView('homes');
+          document.getElementById('home-list').innerHTML =
+            '<div class="empty">This account belongs to no household yet.<br />' +
+            'Create one in the mobile application first.</div>';
+          return;
+        }
+
+        renderHomeSelect();
+
+        // A remembered choice is honoured only while it names a household the
+        // account still belongs to; otherwise the first is used.
+        const remembered = localStorage.getItem('homesense.homeId');
+        const preferred =
+          (cfg.homeId && memberships.some((m) => m.id === cfg.homeId) && cfg.homeId) ||
+          (remembered && memberships.some((m) => m.id === remembered) && remembered) ||
+          null;
+
+        if (preferred) return selectHome(preferred);
+        if (memberships.length === 1) return selectHome(memberships[0].id);
+        renderHomeChooser();
+        showView('homes');
+      }
+
+      function renderHomeChooser() {
+        document.getElementById('home-list').innerHTML = memberships
+          .map(
+            (m) =>
+              `<button class="home-option" data-home="${escapeHtml(m.id)}">` +
+              `<span>${escapeHtml(m.name)}<br /><small>${escapeHtml(m.role.toLowerCase())}</small></span>` +
+              `</button>`,
+          )
+          .join('');
+        document.querySelectorAll('[data-home]').forEach((el) =>
+          el.addEventListener('click', () => selectHome(el.dataset.home)),
+        );
+      }
+
+      function renderHomeSelect() {
+        const select = document.getElementById('home-select');
+        select.innerHTML = memberships
+          .map((m) => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.name)}</option>`)
+          .join('');
+        select.onchange = () => selectHome(select.value);
+      }
+
+      // ---------------------------------------------------------------------
+      // Household attachment
+      // ---------------------------------------------------------------------
+      function selectHome(id) {
+        detachHome();
+        homeId = id;
+        localStorage.setItem('homesense.homeId', id);
+        document.getElementById('home-select').value = id;
+
+        const membership = memberships.find((m) => m.id === id);
+        log(`watching household ${membership?.name ?? id}`);
+        clearBanner();
+        showView('devices');
+        attachHome();
+      }
+
+      function detachHome() {
+        attached.forEach(({ reference, event, fn }) => off(reference, event, fn));
+        attached = [];
+        devices.clear();
         floors.clear();
-        snap.forEach((child) => floors.set(child.key, child.val()));
+        faulted.clear();
+        unplugged.clear();
+        pendingActuation.forEach((timer) => clearTimeout(timer));
+        pendingActuation.clear();
         render();
-      });
+      }
 
-      const devicesRef = ref(db, `${homePath}/devices`);
+      function track(reference, event, fn) {
+        attached.push({ reference, event, fn });
+      }
 
-      onChildAdded(devicesRef, (snap) => {
-        devices.set(snap.key, snap.val() || {});
-        log(`device appeared: ${snap.val()?.name ?? snap.key}`);
-        armDisconnectFor(snap.key);
-        reconcile(snap.key);
-        render();
-      });
+      function attachHome() {
+        const homePath = `homes/${homeId}`;
 
-      onChildChanged(devicesRef, (snap) => {
-        devices.set(snap.key, snap.val() || {});
-        reconcile(snap.key);
-        render();
-      });
+        const workerRef = ref(db, `${homePath}/meta/workerLastSeen`);
+        const workerFn = onValue(
+          workerRef,
+          (snap) => {
+            const last = snap.val() || 0;
+            const alive = last > 0 && Date.now() - last < 30000;
+            dotWorker.className = `dot ${alive ? 'ok' : 'warn'}`;
+            txtWorker.textContent = alive ? 'safety worker: online' : 'safety worker: NOT running';
+            if (!alive) {
+              showBanner(
+                'The safety worker is not running, so no one is deriving ' +
+                  '<code>status</code>, enforcing <code>max_on_duration</code> or ' +
+                  'marking nodes <code>DISCONNECTED</code>. Start it with ' +
+                  '<code>npm start</code> in <code>/worker</code>.',
+              );
+            } else if (banner.className === 'banner') {
+              clearBanner();
+            }
+          },
+          (error) => showBanner(`Cannot read the worker heartbeat: ${error.message}`, true),
+        );
+        track(workerRef, 'value', workerFn);
 
-      onChildRemoved(devicesRef, (snap) => {
-        devices.delete(snap.key);
-        faulted.delete(snap.key);
-        unplugged.delete(snap.key);
-        render();
-      });
+        const floorsRef = ref(db, `${homePath}/floors`);
+        const floorsFn = onValue(floorsRef, (snap) => {
+          floors.clear();
+          snap.forEach((child) => floors.set(child.key, child.val()));
+          render();
+        });
+        track(floorsRef, 'value', floorsFn);
+
+        const devicesRef = ref(db, `${homePath}/devices`);
+
+        const addedFn = onChildAdded(
+          devicesRef,
+          (snap) => {
+            devices.set(snap.key, snap.val() || {});
+            log(`device appeared: ${snap.val()?.name ?? snap.key}`);
+            armDisconnectFor(snap.key);
+            reconcile(snap.key);
+            render();
+          },
+          (error) =>
+            showBanner(
+              `Cannot read the devices: ${error.message}. This account may not be a ` +
+                'member of this household.',
+              true,
+            ),
+        );
+        track(devicesRef, 'child_added', addedFn);
+
+        const changedFn = onChildChanged(devicesRef, (snap) => {
+          devices.set(snap.key, snap.val() || {});
+          reconcile(snap.key);
+          render();
+        });
+        track(devicesRef, 'child_changed', changedFn);
+
+        const removedFn = onChildRemoved(devicesRef, (snap) => {
+          devices.delete(snap.key);
+          faulted.delete(snap.key);
+          unplugged.delete(snap.key);
+          render();
+        });
+        track(devicesRef, 'child_removed', removedFn);
+      }
 
       // ---------------------------------------------------------------------
       // The relay: follow desiredState into reportedState
@@ -293,11 +560,10 @@
 
         for (const [slotId, slot] of Object.entries(device.slots)) {
           const desired = slot.desiredState === true;
-          const reported = slot.reportedState === true;
-          if (desired === reported) continue;
+          if (desired === (slot.reportedState === true)) continue;
 
-          // A faulted relay simply never moves. The worker notices the
-          // sustained mismatch and publishes ERROR - which is the whole point.
+          // A faulted relay never moves. The worker notices the sustained
+          // mismatch and publishes ERROR, which is the point of the control.
           if (faulted.has(deviceId)) continue;
 
           const key = `${deviceId}/${slotId}`;
@@ -306,9 +572,9 @@
           const timer = setTimeout(async () => {
             pendingActuation.delete(key);
             if (unplugged.has(deviceId) || faulted.has(deviceId)) return;
-            await update(ref(db, `${homePath}/devices/${deviceId}/slots/${slotId}`), {
+            await update(ref(db, `homes/${homeId}/devices/${deviceId}/slots/${slotId}`), {
               reportedState: desired,
-            });
+            }).catch((error) => log(`relay write refused: ${error.message}`));
             log(`${device.name} · ${slot.label || slotId} relay -> ${desired ? 'ON' : 'OFF'}`);
           }, ACTUATION_MS);
 
@@ -317,13 +583,13 @@
       }
 
       // ---------------------------------------------------------------------
-      // Heartbeat + onDisconnect
+      // Heartbeat and onDisconnect
       // ---------------------------------------------------------------------
       function armDisconnectFor(deviceId) {
-        // If this browser tab dies, the heartbeat freezes at 0 and the worker
-        // marks the node DISCONNECTED within its stale window. Nothing has to
-        // guess: the absence is recorded by the server itself.
-        onDisconnect(ref(db, `${homePath}/devices/${deviceId}/lastSeen`)).set(0);
+        // If this tab dies, the heartbeat freezes at 0 and the worker marks the
+        // node DISCONNECTED within its stale window. The absence is recorded by
+        // the server rather than guessed by an observer.
+        onDisconnect(ref(db, `homes/${homeId}/devices/${deviceId}/lastSeen`)).set(0);
       }
 
       function armDisconnectHandlers() {
@@ -331,22 +597,23 @@
       }
 
       setInterval(async () => {
+        if (!homeId) return;
         for (const id of devices.keys()) {
           if (unplugged.has(id)) continue;
-          await update(ref(db, `${homePath}/devices/${id}`), {
+          await update(ref(db, `homes/${homeId}/devices/${id}`), {
             lastSeen: serverTimestamp(),
-          });
+          }).catch(() => undefined);
         }
       }, HEARTBEAT_MS);
 
       // ---------------------------------------------------------------------
-      // The three chaos controls
+      // The three fault-injection controls
       // ---------------------------------------------------------------------
       window.toggleFault = (deviceId) => {
         if (faulted.has(deviceId)) {
           faulted.delete(deviceId);
           log(`fault cleared on ${devices.get(deviceId)?.name}`);
-          reconcile(deviceId); // catch up on whatever was missed
+          reconcile(deviceId);
         } else {
           faulted.add(deviceId);
           log(`FAULT injected on ${devices.get(deviceId)?.name} — relay will ignore commands`);
@@ -357,25 +624,23 @@
       window.toggleUnplug = async (deviceId) => {
         if (unplugged.has(deviceId)) {
           unplugged.delete(deviceId);
-          await update(ref(db, `${homePath}/devices/${deviceId}`), {
+          await update(ref(db, `homes/${homeId}/devices/${deviceId}`), {
             lastSeen: serverTimestamp(),
           });
           log(`${devices.get(deviceId)?.name} plugged back in`);
           reconcile(deviceId);
         } else {
           unplugged.add(deviceId);
-          // Stop the heartbeat by freezing lastSeen. The worker's stale check
-          // does the rest; the simulator never writes `status` itself.
-          await update(ref(db, `${homePath}/devices/${deviceId}`), { lastSeen: 0 });
+          await update(ref(db, `homes/${homeId}/devices/${deviceId}`), { lastSeen: 0 });
           log(`${devices.get(deviceId)?.name} UNPLUGGED — heartbeat stopped`);
         }
         render();
       };
 
       /**
-       * A change that starts at the hardware: someone pressed the physical
+       * A change originating at the hardware: someone pressed the physical
        * switch on the wall. Both desired and reported move, and the usage event
-       * is attributed to the SIMULATOR. This is the direct evidence that
+       * is attributed to the simulator. This is the direct evidence that
        * externally-driven changes reach the phone with no manual refresh.
        */
       window.physicalToggle = async (deviceId, slotId) => {
@@ -384,39 +649,40 @@
         if (!slot) return;
         const next = !(slot.reportedState === true);
 
-        await update(ref(db, `${homePath}/devices/${deviceId}/slots/${slotId}`), {
+        await update(ref(db, `homes/${homeId}/devices/${deviceId}/slots/${slotId}`), {
           desiredState: next,
           reportedState: next,
         });
-        await set(push(ref(db, `${homePath}/usage/${deviceId}/${slotId}`)), {
+        await set(push(ref(db, `homes/${homeId}/usage/${deviceId}/${slotId}`)), {
           at: serverTimestamp(),
           event: next ? 'ON' : 'OFF',
           source: 'SIMULATOR',
         });
-        log(`PHYSICAL switch pressed: ${device.name} · ${slot.label || slotId} -> ${next ? 'ON' : 'OFF'}`);
+        log(
+          `PHYSICAL switch pressed: ${device.name} · ${slot.label || slotId} -> ${next ? 'ON' : 'OFF'}`,
+        );
       };
 
       // ---------------------------------------------------------------------
       // Rendering
       // ---------------------------------------------------------------------
-      function statusOf(slot) {
-        return slot.status || 'OFF';
-      }
+      const statusOf = (slot) => slot.status || 'OFF';
 
       function heatPercent(slot) {
         const max = slot?.safety?.max_on_duration || 0;
         if (!max || !slot.onSince || statusOf(slot) !== 'ON') return 0;
-        const elapsed = (Date.now() - slot.onSince) / 1000;
-        return Math.max(0, Math.min(100, (elapsed / max) * 100));
+        return Math.max(0, Math.min(100, ((Date.now() - slot.onSince) / 1000 / max) * 100));
       }
 
       function render() {
         const container = document.getElementById('floors');
+        if (!container) return;
 
         if (devices.size === 0) {
-          container.innerHTML =
-            '<div class="empty">No devices in the database yet.<br />' +
-            'Add them from the app, or press <b>Seed demo home</b> above.</div>';
+          container.innerHTML = homeId
+            ? '<div class="empty">No devices in this household yet.<br />' +
+              'Add them from the application, or press <b>Seed demo home</b> above.</div>'
+            : '';
           return;
         }
 
@@ -431,9 +697,7 @@
         for (const [floorId, list] of byFloor) {
           const floorName = floors.get(floorId)?.name || 'Unassigned';
           html += `<section class="floor"><h2>${escapeHtml(floorName)}</h2><div class="grid">`;
-          for (const [id, device] of list) {
-            html += renderDevice(id, device);
-          }
+          for (const [id, device] of list) html += renderDevice(id, device);
           html += '</div></section>';
         }
         container.innerHTML = html;
@@ -447,7 +711,6 @@
           .join(' ');
 
         let body = '';
-
         if (device.kind === 'CAMERA') {
           body += `<div class="cam">${isUnplugged ? 'NO SIGNAL' : 'MOCK STREAM'}<div class="scan"></div></div>`;
         } else {
@@ -485,37 +748,37 @@
               <button class="warn ${isUnplugged ? 'active' : ''}" onclick="toggleUnplug('${id}')">
                 ${isUnplugged ? 'Plug back in' : 'Unplug'}
               </button>
-              ${
-                slotIds.length > 0
-                  ? `<button onclick="physicalToggle('${id}','${slotIds[0]}')">Physical toggle</button>`
-                  : ''
-              }
+              ${slotIds.length > 0 ? `<button onclick="physicalToggle('${id}','${slotIds[0]}')">Physical toggle</button>` : ''}
             </div>
           </article>`;
       }
 
       function escapeHtml(value) {
-        return String(value ?? '').replace(/[&<>"']/g, (c) => ({
-          '&': '&amp;',
-          '<': '&lt;',
-          '>': '&gt;',
-          '"': '&quot;',
-          "'": '&#39;',
-        })[c]);
+        return String(value ?? '').replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c],
+        );
       }
 
-      // Heat bars and countdowns advance once a second without a database write.
+      // Heat bars advance once a second without a database write.
       setInterval(render, 1000);
 
       // ---------------------------------------------------------------------
       // Seeding
       // ---------------------------------------------------------------------
       document.getElementById('btn-seed').addEventListener('click', async () => {
-        if (!confirm('Write the demo house into the database? Existing floors and devices with the same ids are overwritten.')) {
-          return;
+        if (!homeId) return;
+        if (!confirm('Write the demo house into this household? Existing floors and devices with the same identifiers are overwritten.')) return;
+        try {
+          await seed();
+          log('demo home seeded');
+        } catch (error) {
+          showBanner(
+            `Seeding was refused: ${error.message}. Adding devices requires the ` +
+              'household owner.',
+            true,
+          );
         }
-        await seed();
-        log('demo home seeded');
       });
 
       function slot(label, appliance, extra = {}) {
@@ -525,7 +788,6 @@
           desiredState: false,
           reportedState: false,
           status: 'DISCONNECTED',
-          onSince: null,
           safety: { max_on_duration: 0, autoCutoffEnabled: false },
           schedule: { enabled: false, onAtMinuteOfDay: 0, offAtMinuteOfDay: 0, days: [] },
           ...extra,
@@ -533,32 +795,15 @@
       }
 
       async function seed() {
-        await update(ref(db, `${homePath}/floors`), {
-          'floor-ground': {
-            name: 'Ground floor',
-            level: 0,
-            planAsset: 'ground_floor',
-            gridCols: 8,
-            gridRows: 6,
-          },
-          'floor-upper': {
-            name: 'First floor',
-            level: 1,
-            planAsset: 'first_floor',
-            gridCols: 8,
-            gridRows: 6,
-          },
+        await update(ref(db, `homes/${homeId}/floors`), {
+          'floor-ground': { name: 'Ground floor', level: 0, planAsset: 'ground_floor', gridCols: 8, gridRows: 6 },
+          'floor-upper': { name: 'First floor', level: 1, planAsset: 'first_floor', gridCols: 8, gridRows: 6 },
         });
 
-        await update(ref(db, `${homePath}/devices`), {
+        await update(ref(db, `homes/${homeId}/devices`), {
           'dev-iron': {
-            floorId: 'floor-ground',
-            name: 'Utility outlet',
-            gridX: 1,
-            gridY: 1,
-            kind: 'OUTLET',
-            lastSeen: 0,
-            link: 'DISCONNECTED',
+            floorId: 'floor-ground', name: 'Utility outlet', gridX: 1, gridY: 1,
+            kind: 'OUTLET', lastSeen: 0, link: 'DISCONNECTED',
             slots: {
               s1: slot('Iron', { name: 'Steam iron', hazardous: true, watts: 1200 }, {
                 safety: { max_on_duration: 30, autoCutoffEnabled: true },
@@ -566,13 +811,8 @@
             },
           },
           'dev-hall-gang': {
-            floorId: 'floor-ground',
-            name: 'Hall gang box',
-            gridX: 4,
-            gridY: 2,
-            kind: 'MULTI_SWITCH',
-            lastSeen: 0,
-            link: 'DISCONNECTED',
+            floorId: 'floor-ground', name: 'Hall gang box', gridX: 4, gridY: 2,
+            kind: 'MULTI_SWITCH', lastSeen: 0, link: 'DISCONNECTED',
             slots: {
               s1: slot('Ceiling light', { name: 'LED panel', hazardous: false, watts: 24 }, {
                 schedule: { enabled: true, onAtMinuteOfDay: 1080, offAtMinuteOfDay: 1380, days: [] },
@@ -584,13 +824,8 @@
             },
           },
           'dev-kitchen': {
-            floorId: 'floor-ground',
-            name: 'Kitchen outlet',
-            gridX: 6,
-            gridY: 4,
-            kind: 'OUTLET',
-            lastSeen: 0,
-            link: 'DISCONNECTED',
+            floorId: 'floor-ground', name: 'Kitchen outlet', gridX: 6, gridY: 4,
+            kind: 'OUTLET', lastSeen: 0, link: 'DISCONNECTED',
             slots: {
               s1: slot('Kettle', { name: 'Electric kettle', hazardous: true, watts: 1800 }, {
                 safety: { max_on_duration: 120, autoCutoffEnabled: true },
@@ -598,61 +833,25 @@
             },
           },
           'dev-front-cam': {
-            floorId: 'floor-ground',
-            name: 'Front door camera',
-            gridX: 0,
-            gridY: 4,
-            kind: 'CAMERA',
-            lastSeen: 0,
-            link: 'DISCONNECTED',
-            camera: {
-              snapshotUrl: 'mock://snapshot/front_door',
-              streamUrl: 'mock://stream/front_door',
-              lastFrameAt: 0,
-            },
+            floorId: 'floor-ground', name: 'Front door camera', gridX: 0, gridY: 4,
+            kind: 'CAMERA', lastSeen: 0, link: 'DISCONNECTED',
+            camera: { snapshotUrl: 'mock://snapshot/front_door', streamUrl: 'mock://stream/front_door', lastFrameAt: 0 },
           },
           'dev-bed-gang': {
-            floorId: 'floor-upper',
-            name: 'Bedroom gang box',
-            gridX: 2,
-            gridY: 2,
-            kind: 'MULTI_SWITCH',
-            lastSeen: 0,
-            link: 'DISCONNECTED',
+            floorId: 'floor-upper', name: 'Bedroom gang box', gridX: 2, gridY: 2,
+            kind: 'MULTI_SWITCH', lastSeen: 0, link: 'DISCONNECTED',
             slots: {
               s1: slot('Bed light', { name: 'Bulb', hazardous: false, watts: 9 }),
               s2: slot('Reading lamp', { name: 'Lamp', hazardous: false, watts: 7 }),
             },
           },
           'dev-landing-cam': {
-            floorId: 'floor-upper',
-            name: 'Landing camera',
-            gridX: 6,
-            gridY: 1,
-            kind: 'CAMERA',
-            lastSeen: 0,
-            link: 'DISCONNECTED',
-            camera: {
-              snapshotUrl: 'mock://snapshot/landing',
-              streamUrl: 'mock://stream/landing',
-              lastFrameAt: 0,
-            },
+            floorId: 'floor-upper', name: 'Landing camera', gridX: 6, gridY: 1,
+            kind: 'CAMERA', lastSeen: 0, link: 'DISCONNECTED',
+            camera: { snapshotUrl: 'mock://snapshot/landing', streamUrl: 'mock://stream/landing', lastFrameAt: 0 },
           },
         });
       }
-
-      // ---------------------------------------------------------------------
-      // Start
-      // ---------------------------------------------------------------------
-      signInAnonymously(auth)
-        .then((cred) => log(`signed in anonymously as ${cred.user.uid.slice(0, 8)}…`))
-        .catch((error) => {
-          banner.className = 'banner err';
-          banner.innerHTML =
-            'Anonymous sign-in failed: <code>' +
-            escapeHtml(error.message) +
-            '</code>. Enable it in Firebase console → Authentication → Sign-in method.';
-        });
     </script>
   </body>
 </html>
