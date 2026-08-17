@@ -1,37 +1,36 @@
-# Application builds
+# Application build
 
-Signed release builds of the submitted application.
+`HomeSense-1.0.apk` — the submitted release build, signed with the project
+release key.
 
-| File | Backend | Requires configuration |
-|---|---|---|
-| `HomeSense-1.0.apk` | Firebase Realtime Database | Yes — see `docs/FIREBASE_SETUP.md` |
-| `HomeSense-1.0-demo.apk` | In-memory implementation | No |
+## Installing
 
-## Which to install
+Transfer the file to an Android device running API 26 (Android 8.0) or later
+and open it. Installation from outside the Play Store must be permitted for the
+application handling the file, which Android prompts for.
 
-`HomeSense-1.0-demo.apk` runs without any configuration, network connection or
-Firebase project. It performs the roles of simulator, worker and database
-locally, including a working safety cut-off, and exposes the fault-injection
-controls within the device sheet. It is the appropriate build for reviewing the
-application on its own.
+## First run
 
-`HomeSense-1.0.apk` is the full system and communicates with a Firebase Realtime
-Database. It requires the configuration described in `docs/FIREBASE_SETUP.md`,
-and the safety worker and simulator must also be running for the system to
-behave as documented.
+Register an account, or continue as a guest, then create a household. There is
+nothing to display until a household exists, which is what the onboarding
+screen is for.
 
-The two have different application identifiers and can be installed alongside
-each other. The demo build is labelled "HomeSense Demo".
+The application is configured against the project's Firebase instance, so
+signing in and managing floors and devices work immediately.
 
-## Installation
+For devices to report their state, two companion processes must also be running:
 
-Transfer the file to an Android device running API 26 or later and open it.
-Installation from outside the Play Store must be permitted for the application
-handling the file, which Android will prompt for.
+| Process | Purpose |
+|---|---|
+| `worker/` | Derives the four device states, enforces `max_on_duration`, applies schedules |
+| `simulator/` | Stands in for the physical appliances |
+
+Without the worker, a device stays `DISCONNECTED` and commands are queued
+rather than applied. That is correct behaviour rather than a fault: the
+application records an intention, and only the hardware and the worker can
+carry it out. See the repository README for how to start both.
 
 ## Signature
-
-Both builds are signed with the project release key:
 
 ```
 CN=HomeSense, OU=SCS 3311, O=UCSC, L=Colombo, C=LK
@@ -53,3 +52,11 @@ cp keystore.properties.template keystore.properties   # then complete it
 
 Without `keystore.properties` the release build falls back to the debug signing
 configuration and still produces an installable APK.
+
+A second product flavour, `demo`, runs against an in-memory backend with no
+Firebase project and no network at all. It is not distributed here, but is
+useful for development and as a fallback:
+
+```bash
+./gradlew assembleDemoDebug
+```

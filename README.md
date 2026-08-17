@@ -16,8 +16,8 @@ Developed for **SCS 3311**.
 [Technical report](docs/HomeSense-Technical-Report.pdf) ·
 [Data contract](docs/SCHEMA.md)
 
-The submitted builds are committed to `apk/`. `HomeSense-1.0-demo.apk` installs
-and runs with no configuration and no network connection; see `apk/README.md`.
+The submitted build is committed to `apk/HomeSense-1.0.apk`, signed with the
+project release key; see `apk/README.md`.
 
 ---
 
