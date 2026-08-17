@@ -471,6 +471,18 @@ from a content delivery network. It requires no build step and no server. It
 represents the physical appliances and participates in the protocol rather than
 merely displaying it.
 
+It authenticates with the same account as the mobile client and then discovers
+the households that account belongs to. This follows from the security rules
+rather than being a convenience: a household is readable only by its members,
+so hardware belonging to a household must itself be a member. An earlier
+version signed in anonymously, which stopped working the moment tenancy was
+enforced, and correctly so.
+
+The household identifier is generated when the household is created, so it
+cannot be configured in advance. It is read from \code{/users/\{uid\}/homes},
+the index each account keeps of its own households, which is what permits
+discovery without reading anything the account does not own.
+
 Devices are rendered as cards grouped by floor. Lamps illuminate when their slot
 is on, slots with an armed cut-off display a bar filling toward
 \code{max\_on\_duration}, and cameras display a placeholder stream.
@@ -732,7 +744,8 @@ R15 & Usage reporting & \code{ui/report/}, \code{UsageDao} & \code{UsageDaoTest}
 R16 & Web simulator reflecting updates & \code{simulator/index.html} & Demonstration \textbf{(M)} & 10:30 \\
 R17 & Simulator listens to the database & \code{simulator/index.html} & Demonstration \textbf{(M)} & 6:00 \\
 A1  & Accounts, sign-in and sign-out & \code{data/auth/}, \code{ui/account/} & Verified against the deployed project & --- \
-A2  & Household tenancy and roles & \code{database.rules.json} & Table ef{tab:rulescheck} & --- \
+A2  & Household tenancy and roles & \code{database.rules.json} & Table 
+ef{tab:rulescheck} & --- \
 D1  & Repository and APK & \code{apk/HomeSense-1.0.apk} & Signature verified & --- \\
 D2  & Technical report & This document & --- & --- \\
 D3  & Demonstration, three members & Demonstration script & --- & 0:00 \\
