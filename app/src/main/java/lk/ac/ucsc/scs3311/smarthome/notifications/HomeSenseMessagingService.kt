@@ -1,6 +1,5 @@
 package lk.ac.ucsc.scs3311.smarthome.notifications
 
-import android.util.Log
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 
@@ -38,15 +37,13 @@ class HomeSenseMessagingService : FirebaseMessagingService() {
         }
     }
 
-    override fun onNewToken(token: String) {
-        super.onNewToken(token)
-        // The worker publishes to a topic rather than to individual tokens, so
-        // there is no registry to update here. Logged only for debugging.
-        Log.d(TAG, "FCM token refreshed")
-    }
+    // onNewToken is deliberately not overridden. The worker publishes to a topic
+    // named after the household rather than to individual device tokens, so
+    // there is no token registry to keep in sync and nothing to do when one is
+    // reissued. Overriding it only to log would leave a deprecated member in
+    // the class for no benefit.
 
     private companion object {
-        const val TAG = "HomeSenseFcm"
         const val KIND_SAFETY_CUTOFF = "SAFETY_CUTOFF"
     }
 }

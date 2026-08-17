@@ -1,5 +1,6 @@
 package lk.ac.ucsc.scs3311.smarthome.ui.account
 
+import android.content.ClipData
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -46,13 +47,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -62,6 +64,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Account
 import lk.ac.ucsc.scs3311.smarthome.domain.model.HomeMember
 import lk.ac.ucsc.scs3311.smarthome.domain.model.HomeMembership
@@ -505,7 +508,10 @@ private fun UpgradeAccountDialog(
 
 @Composable
 private fun InviteDialog(code: String?, onDismiss: () -> Unit) {
-    val clipboard = LocalClipboardManager.current
+    // The current clipboard API is suspending, because writing to the system
+    // clipboard can block. A scope is therefore needed to call it from a click.
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -522,7 +528,15 @@ private fun InviteDialog(code: String?, onDismiss: () -> Unit) {
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                         )
-                        IconButton(onClick = { clipboard.setText(AnnotatedString(code)) }) {
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    clipboard.setClipEntry(
+                                        ClipEntry(ClipData.newPlainText("Invite code", code)),
+                                    )
+                                }
+                            },
+                        ) {
                             Icon(Icons.Default.ContentCopy, contentDescription = "Copy the code")
                         }
                     }
