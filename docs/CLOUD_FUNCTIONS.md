@@ -35,23 +35,30 @@ import { Device, evaluateDevice } from './rules';
 
 initializeApp();
 
-const HOME_ID = 'home-1';
 const TZ_OFFSET = 330; // Sri Lanka, UTC+5:30
 
-async function evaluate(deviceId: string, device: Device | null) {
+async function evaluate(homeId: string, deviceId: string, device: Device | null) {
   if (!device) return;
   const db = getDatabase();
   const actions = evaluateDevice(deviceId, device, { now: Date.now }, TZ_OFFSET);
   if (actions.length > 0) {
-    await new ActionExecutor(db, HOME_ID, sendSafetyAlert).apply(actions);
+    await new ActionExecutor(db, homeId, (message, id) =>
+      sendSafetyAlert(homeId, message, id),
+    ).apply(actions);
   }
 }
 
-// Trigger 1 — replaces the child listeners in worker/src/index.ts.
+// Trigger 1 — replaces the child listeners in worker/src/index.ts. The wildcard
+// covers every household, so no discovery step is needed: Cloud Functions match
+// the path pattern rather than attaching listeners the way the worker does.
 export const onDeviceWritten = onValueWritten(
-  `/homes/${HOME_ID}/devices/{deviceId}`,
+  '/homes/{homeId}/devices/{deviceId}',
   async (event) => {
-    await evaluate(event.params.deviceId, event.data.after.val() as Device | null);
+    await evaluate(
+      event.params.homeId,
+      event.params.deviceId,
+      event.data.after.val() as Device | null,
+    );
   },
 );
 
@@ -59,9 +66,14 @@ export const onDeviceWritten = onValueWritten(
 // minute, so a max_on_duration under 60s relies on the write trigger alone;
 // see "The one real difference" below.
 export const sweep = onSchedule('every 1 minutes', async () => {
-  const snapshot = await getDatabase().ref(`homes/${HOME_ID}/devices`).get();
-  const devices = (snapshot.val() ?? {}) as Record<string, Device>;
-  await Promise.all(Object.entries(devices).map(([id, d]) => evaluate(id, d)));
+  const index = await getDatabase().ref('homeIndex').get();
+  for (const homeId of Object.keys(index.val() ?? {})) {
+    const snapshot = await getDatabase().ref(`homes/${homeId}/devices`).get();
+    const devices = (snapshot.val() ?? {}) as Record<string, Device>;
+    await Promise.all(
+      Object.entries(devices).map(([id, d]) => evaluate(homeId, id, d)),
+    );
+  }
 });
 ```
 

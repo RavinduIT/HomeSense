@@ -76,7 +76,7 @@ file containing `sdk.dir=/path/to/sdk`.
 ### Running the tests
 
 ```bash
-./gradlew testDemoDebugUnitTest    # 75 application tests
+./gradlew testDemoDebugUnitTest    # 77 application tests
 cd worker && npm ci && npm test    # 40 worker tests, no credentials required
 ```
 
@@ -106,8 +106,9 @@ Genuine credentials are not committed. Copy each template:
 A service-account key is also required by the worker, at
 `worker/serviceAccountKey.json`.
 
-The `homeId` in the simulator's configuration must name a household that exists;
-create one in the application first.
+The simulator discovers households from the account it signs in with, so no
+household identifier needs configuring. Create a household in the application
+first; there is nothing to control until one exists.
 
 ### 2. Safety worker
 
@@ -127,8 +128,20 @@ database with a week of usage history.
 
 ### 3. Simulator
 
-Open `simulator/index.html` in a browser. No build step or server is required.
-Use the *Seed demo home* control once to create the sample house.
+The page uses ES modules, which browsers refuse to load over `file://`, so it
+must be served over HTTP. Any static server will do:
+
+```bash
+cd simulator
+python -m http.server 8080      # or: npx serve
+```
+
+Open `http://127.0.0.1:8080` and sign in with the same account as the
+application. The simulator discovers the households that account belongs to; a
+single household is selected automatically. Use *Seed demo home* once to create
+the sample house.
+
+There is no build step.
 
 ### 4. Application
 
@@ -206,9 +219,9 @@ sharp at any screen density.
 
 | Suite | Tests |
 |---|---|
-| Application unit tests | 75 |
+| Application unit tests | 77 |
 | Worker rule tests | 40 |
-| Total | 115 |
+| Total | 117 |
 
 The continuous integration workflow in `.github/workflows/build.yml` runs both
 suites on every push, from a checkout containing no credentials.

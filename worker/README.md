@@ -61,7 +61,11 @@ of the badge turning red.
 Render or Railway, as a background worker:
 
 - build `npm install && npm run build`, start `npm start`;
-- set `DATABASE_URL`, `HOME_ID`, `TIMEZONE_OFFSET_MINUTES`;
+- set `DATABASE_URL` and `TIMEZONE_OFFSET_MINUTES`. `HOME_ID` is not
+  required: the worker discovers households from `/homeIndex` and attaches
+  to each, so a household created in the application is picked up without a
+  redeployment. It is still read by the seeding script, which needs one
+  target;
 - paste the service-account JSON into `GOOGLE_APPLICATION_CREDENTIALS_JSON`
   rather than committing a key file.
 
