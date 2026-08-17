@@ -81,7 +81,7 @@ fun DeviceControlSheet(
             onToggleAll = viewModel::toggleAll,
             onEditSchedule = viewModel::updateSchedule,
             onEditSafety = viewModel::updateSafety,
-            onRename = viewModel::renameSlot,
+            onEditSlot = viewModel::editSlot,
             onDelete = {
                 viewModel.deleteDevice()
                 onDismiss()

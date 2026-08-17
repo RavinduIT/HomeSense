@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import lk.ac.ucsc.scs3311.smarthome.HomeSenseApp
 import lk.ac.ucsc.scs3311.smarthome.data.repository.HomeRepository
+import lk.ac.ucsc.scs3311.smarthome.domain.model.Appliance
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Device
 import lk.ac.ucsc.scs3311.smarthome.domain.model.LinkState
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Safety
@@ -152,8 +153,18 @@ class DeviceViewModel(
         viewModelScope.launch { repository.updateSafety(deviceId, slotId, safety) }
     }
 
-    fun renameSlot(slotId: String, label: String) {
-        viewModelScope.launch { repository.updateSlotLabel(deviceId, slotId, label.trim()) }
+    /**
+     * Saves what a slot controls: its label and the appliance attached to it.
+     *
+     * Both are written, because they are edited together. The appliance carries
+     * the wattage the energy estimate uses and the flag marking it a fire risk,
+     * neither of which had any way of being set after a device was created.
+     */
+    fun editSlot(slotId: String, label: String, appliance: Appliance) {
+        viewModelScope.launch {
+            repository.updateSlotLabel(deviceId, slotId, label.trim())
+            repository.updateAppliance(deviceId, slotId, appliance)
+        }
     }
 
     fun deleteDevice() {

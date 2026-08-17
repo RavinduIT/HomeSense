@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import lk.ac.ucsc.scs3311.smarthome.domain.model.Appliance
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Safety
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Schedule
 import lk.ac.ucsc.scs3311.smarthome.ui.theme.HomeSenseTheme
@@ -267,27 +268,93 @@ fun SafetyDialog(
     )
 }
 
+/**
+ * Editor for what a slot controls.
+ *
+ * This replaces a dialog that could only change the label. Every field a slot
+ * carries about its appliance is editable here, for every slot rather than only
+ * the first of a gang box. Without it, the wattage and the fire-risk flag on
+ * switches two onwards could never be set: they would be permanently absent
+ * from the energy estimate, and could never be given a safety cut-off.
+ */
 @Composable
-fun RenameDialog(
-    initial: String,
+fun SlotEditorDialog(
+    initialLabel: String,
+    initialAppliance: Appliance,
     onDismiss: () -> Unit,
-    onConfirm: (String) -> Unit,
+    onConfirm: (label: String, appliance: Appliance) -> Unit,
 ) {
-    var text by rememberSaveable { mutableStateOf(initial) }
+    var label by rememberSaveable { mutableStateOf(initialLabel) }
+    var applianceName by rememberSaveable { mutableStateOf(initialAppliance.name) }
+    var watts by rememberSaveable {
+        mutableStateOf(initialAppliance.watts?.toString().orEmpty())
+    }
+    var hazardous by rememberSaveable { mutableStateOf(initialAppliance.hazardous) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename switch") },
+        title = { Text("Edit switch") },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
-                label = { Text("Label") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    label = { Text("Label") },
+                    placeholder = { Text("Ceiling light") },
+                    supportingText = { Text("What this switch is called in the interface.") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = applianceName,
+                    onValueChange = { applianceName = it },
+                    label = { Text("Appliance") },
+                    placeholder = { Text("LED panel") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = watts,
+                    onValueChange = { watts = it.filter(Char::isDigit).take(5) },
+                    label = { Text("Watts") },
+                    supportingText = { Text("Used for the energy estimate. Optional.") },
+                    singleLine = true,
+                    keyboardOptions = TextKeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Fire risk", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Marks the appliance as one that should not be left " +
+                                "running unattended. Set the cut-off separately.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = hazardous, onCheckedChange = { hazardous = it })
+                }
+            }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(text) }) { Text("Save") } },
+        confirmButton = {
+            TextButton(onClick = {
+                onConfirm(
+                    label,
+                    Appliance(
+                        name = applianceName.trim(),
+                        hazardous = hazardous,
+                        watts = watts.toIntOrNull(),
+                    ),
+                )
+            }) { Text("Save") }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

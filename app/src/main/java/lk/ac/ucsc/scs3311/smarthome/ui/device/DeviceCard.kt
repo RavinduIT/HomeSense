@@ -74,7 +74,7 @@ fun DeviceCard(
     onToggleAll: (desired: Boolean) -> Unit,
     onEditSchedule: (slotId: String, Schedule) -> Unit,
     onEditSafety: (slotId: String, Safety) -> Unit,
-    onRename: (slotId: String, String) -> Unit,
+    onEditSlot: (slotId: String, label: String, Appliance) -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
     pendingSlotIds: Set<String> = emptySet(),
@@ -96,7 +96,9 @@ fun DeviceCard(
                         onToggle = { onToggleSlot(slot.id, it) },
                         onEditSchedule = { onEditSchedule(slot.id, it) },
                         onEditSafety = { onEditSafety(slot.id, it) },
-                        onRename = { onRename(slot.id, it) },
+                        onEditSlot = { label, appliance ->
+                            onEditSlot(slot.id, label, appliance)
+                        },
                     )
                 }
 
@@ -108,7 +110,7 @@ fun DeviceCard(
                     onToggleAll = onToggleAll,
                     onEditSchedule = onEditSchedule,
                     onEditSafety = onEditSafety,
-                    onRename = onRename,
+                    onEditSlot = onEditSlot,
                 )
 
                 DeviceKind.CAMERA -> CameraBody(
@@ -183,7 +185,7 @@ private fun MultiSwitchBody(
     onToggleAll: (Boolean) -> Unit,
     onEditSchedule: (String, Schedule) -> Unit,
     onEditSafety: (String, Safety) -> Unit,
-    onRename: (String, String) -> Unit,
+    onEditSlot: (String, String, Appliance) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(true) }
     val anyControllable = device.slots.any { it.status.allowsToggle }
@@ -223,7 +225,7 @@ private fun MultiSwitchBody(
                     onToggle = { onToggleSlot(slot.id, it) },
                     onEditSchedule = { onEditSchedule(slot.id, it) },
                     onEditSafety = { onEditSafety(slot.id, it) },
-                    onRename = { onRename(slot.id, it) },
+                    onEditSlot = { label, appliance -> onEditSlot(slot.id, label, appliance) },
                 )
             }
         }
@@ -239,13 +241,13 @@ fun SlotRow(
     onToggle: (Boolean) -> Unit,
     onEditSchedule: (Schedule) -> Unit,
     onEditSafety: (Safety) -> Unit,
-    onRename: (String) -> Unit,
+    onEditSlot: (label: String, Appliance) -> Unit,
     modifier: Modifier = Modifier,
     pending: Boolean = false,
 ) {
     var showSchedule by remember { mutableStateOf(false) }
     var showSafety by remember { mutableStateOf(false) }
-    var showRename by remember { mutableStateOf(false) }
+    var showEditor by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
 
     Column(modifier.fillMaxWidth().padding(vertical = 6.dp)) {
@@ -329,8 +331,8 @@ fun SlotRow(
                         onClick = { menuOpen = false; showSafety = true },
                     )
                     DropdownMenuItem(
-                        text = { Text("Rename…") },
-                        onClick = { menuOpen = false; showRename = true },
+                        text = { Text("Edit switch…") },
+                        onClick = { menuOpen = false; showEditor = true },
                     )
                 }
             }
@@ -364,11 +366,15 @@ fun SlotRow(
             onConfirm = { onEditSafety(it); showSafety = false },
         )
     }
-    if (showRename) {
-        RenameDialog(
-            initial = slot.label,
-            onDismiss = { showRename = false },
-            onConfirm = { onRename(it); showRename = false },
+    if (showEditor) {
+        SlotEditorDialog(
+            initialLabel = slot.label,
+            initialAppliance = slot.appliance,
+            onDismiss = { showEditor = false },
+            onConfirm = { label, appliance ->
+                onEditSlot(label, appliance)
+                showEditor = false
+            },
         )
     }
 }
@@ -495,7 +501,7 @@ private fun OutletCardPreview() {
                     onToggleAll = {},
                     onEditSchedule = { _, _ -> },
                     onEditSafety = { _, _ -> },
-                    onRename = { _, _ -> },
+                    onEditSlot = { _, _, _ -> },
                     onDelete = {},
                 )
             }
@@ -540,7 +546,7 @@ private fun MultiSwitchCardPreview() {
             onToggleAll = {},
             onEditSchedule = { _, _ -> },
             onEditSafety = { _, _ -> },
-            onRename = { _, _ -> },
+            onEditSlot = { _, _, _ -> },
             onDelete = {},
             modifier = Modifier.padding(12.dp),
         )
@@ -570,7 +576,7 @@ private fun CameraCardPreview() {
             onToggleAll = {},
             onEditSchedule = { _, _ -> },
             onEditSafety = { _, _ -> },
-            onRename = { _, _ -> },
+            onEditSlot = { _, _, _ -> },
             onDelete = {},
             modifier = Modifier.padding(12.dp),
         )
