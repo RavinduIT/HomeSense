@@ -77,6 +77,33 @@ class SlotTest {
     }
 
     @Test
+    fun `a slot that has never reported is disconnected but still commandable`() {
+        // A device created from the application is DISCONNECTED until the
+        // hardware reports for the first time. Refusing commands in that state
+        // left every newly placed device permanently unusable, so the interface
+        // accepts the command and records the intention.
+        val fresh = Slot(id = "s1", label = "Iron", status = SlotStatus.DISCONNECTED)
+
+        assertEquals(SlotStatus.DISCONNECTED, fresh.status)
+        assertFalse("nothing has been reported yet", fresh.reportedState)
+        assertFalse("no intention has been recorded yet", fresh.desiredState)
+
+        // Recording an intention does not claim the device is running: status
+        // is the worker's to move, and it has not moved.
+        val commanded = fresh.copy(desiredState = true)
+        assertEquals(SlotStatus.DISCONNECTED, commanded.status)
+        assertTrue("the disagreement is expected while offline", commanded.isMismatched)
+    }
+
+    @Test
+    fun `an offline slot reports no on-time, so no cutoff can be computed`() {
+        val offline = ironOn().copy(status = SlotStatus.DISCONNECTED)
+
+        assertEquals(0L, offline.onDurationSeconds(t0 + 60_000))
+        assertNull(offline.cutoffProgress(t0 + 60_000))
+    }
+
+    @Test
     fun `multi switch aggregates its slots without becoming several devices`() {
         val gangBox = Device(
             id = "d1",

@@ -19,6 +19,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import lk.ac.ucsc.scs3311.smarthome.HomeSenseApp
 import lk.ac.ucsc.scs3311.smarthome.data.repository.HomeRepository
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Device
+import lk.ac.ucsc.scs3311.smarthome.domain.model.LinkState
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Safety
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Schedule
 import lk.ac.ucsc.scs3311.smarthome.domain.model.SlotStatus
@@ -83,6 +84,10 @@ class DeviceViewModel(
 
     fun toggleSlot(slotId: String, desired: Boolean) {
         viewModelScope.launch {
+            val before = repository.device(deviceId).first()
+            val wasUnreachable = before?.link == LinkState.DISCONNECTED ||
+                before?.slot(slotId)?.status == SlotStatus.DISCONNECTED
+
             pending.update { it + slotId }
             runCatching { repository.setSlotDesiredState(deviceId, slotId, desired) }
                 .onFailure {
@@ -90,6 +95,21 @@ class DeviceViewModel(
                     message.value = "Could not reach the hub. Nothing was changed."
                     return@launch
                 }
+
+            val label = before?.slot(slotId)?.label.orEmpty().ifBlank { "The device" }
+
+            // A device that has never reported, or has stopped reporting, is not
+            // going to answer within the reconciliation window. Waiting for it
+            // would produce a misleading "did not respond" for what is in fact a
+            // correctly recorded intention, so the command is reported as queued
+            // and the wait is skipped.
+            if (wasUnreachable) {
+                pending.update { it - slotId }
+                message.value =
+                    "$label is offline. The request is saved and will be applied " +
+                    "when it reconnects."
+                return@launch
+            }
 
             // Wait for the hardware to report back, via the same stream the UI
             // renders from. No polling, no callback.
@@ -101,12 +121,7 @@ class DeviceViewModel(
 
             pending.update { it - slotId }
             if (settled == null) {
-                val label = repository.device(deviceId).first()?.slot(slotId)?.label.orEmpty()
-                message.value = if (label.isBlank()) {
-                    "The device did not respond. It is now showing an error."
-                } else {
-                    "$label did not respond. It is now showing an error."
-                }
+                message.value = "$label did not respond. It is now showing an error."
             }
         }
     }
@@ -171,5 +186,25 @@ class DeviceViewModel(
     }
 }
 
-/** True when a slot is in a state the user can act on. */
-val SlotStatus.allowsToggle: Boolean get() = this != SlotStatus.DISCONNECTED
+/**
+ * Whether the control accepts a command.
+ *
+ * Always. Disabling the switch for a disconnected device seems defensible —
+ * one cannot operate what one cannot reach — but it is wrong here, for two
+ * reasons.
+ *
+ * First, the application writes `desiredState`, which is an *intention*, not an
+ * instruction that has taken effect. Recording an intention for a device that
+ * is currently unreachable is exactly what the field is for: the write is
+ * queued, and the relay applies it when it reports back.
+ *
+ * Second, and decisively, a newly created device is `DISCONNECTED` until the
+ * hardware has reported at least once. Disabling the control in that state left
+ * every freshly placed device permanently unusable, with nothing the user could
+ * do to recover.
+ *
+ * What the interface must not do is imply the command took effect. That is
+ * handled separately: `status` continues to show `DISCONNECTED`, and the
+ * ViewModel reports the command as queued rather than confirmed.
+ */
+val SlotStatus.allowsToggle: Boolean get() = true
