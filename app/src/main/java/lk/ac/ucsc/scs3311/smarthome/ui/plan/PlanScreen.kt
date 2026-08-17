@@ -35,8 +35,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -130,12 +132,12 @@ fun PlanScreen(
         is PlanDialog.AddDevice -> AddDeviceDialog(
             cell = current.cell,
             onDismiss = viewModel::dismissDialog,
-            onConfirm = { name, kind, slotCount, appliance, hazardous, watts, maxOn ->
+            onConfirm = { name, kind, labels, appliance, hazardous, watts, maxOn ->
                 viewModel.addDevice(
                     cell = current.cell,
                     name = name,
                     kind = kind,
-                    slotCount = slotCount,
+                    slotLabels = labels,
                     firstApplianceName = appliance,
                     hazardous = hazardous,
                     watts = watts,
@@ -209,7 +211,7 @@ private fun AddDeviceDialog(
     onConfirm: (
         name: String,
         kind: DeviceKind,
-        slotCount: Int,
+        slotLabels: List<String>,
         appliance: String,
         hazardous: Boolean,
         watts: Int?,
@@ -219,6 +221,14 @@ private fun AddDeviceDialog(
     var name by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf(DeviceKind.OUTLET) }
     var slotCount by rememberSaveable { mutableIntStateOf(3) }
+    // A snapshot list rather than a State<List<...>>, so an edit to one field
+    // does not rebuild the whole list, and so it survives rotation.
+    val slotLabels = rememberSaveable(
+        saver = listSaver(
+            save = { it.toList() },
+            restore = { it.toMutableStateList() },
+        ),
+    ) { List(MULTI_SWITCH_SLOT_RANGE.last) { "" }.toMutableStateList() }
     var appliance by rememberSaveable { mutableStateOf("") }
     var hazardous by rememberSaveable { mutableStateOf(false) }
     var watts by rememberSaveable { mutableStateOf("") }
@@ -275,6 +285,24 @@ private fun AddDeviceDialog(
                             )
                         }
                     }
+
+                    // Every switch is named here, not only the first. Leaving
+                    // one blank falls back to "Switch n" rather than refusing
+                    // to continue.
+                    Spacer(Modifier.height(4.dp))
+                    (0 until slotCount).forEach { index ->
+                        OutlinedTextField(
+                            value = slotLabels.getOrElse(index) { "" },
+                            onValueChange = { value ->
+                                while (slotLabels.size <= index) slotLabels.add("")
+                                slotLabels[index] = value
+                            },
+                            label = { Text("Switch ${index + 1}") },
+                            placeholder = { Text(SWITCH_PLACEHOLDERS.getOrElse(index) { "Switch ${index + 1}" }) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
 
                 if (kind != DeviceKind.CAMERA) {
@@ -329,7 +357,7 @@ private fun AddDeviceDialog(
                     onConfirm(
                         name,
                         kind,
-                        slotCount,
+                        slotLabels.take(slotCount),
                         appliance,
                         hazardous,
                         watts.toIntOrNull(),
@@ -341,6 +369,16 @@ private fun AddDeviceDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }
+
+/** Suggestions, so the fields are not a column of identical empty boxes. */
+private val SWITCH_PLACEHOLDERS = listOf(
+    "Ceiling light",
+    "Porch light",
+    "Ceiling fan",
+    "Wall light",
+    "Extractor",
+    "Spare",
+)
 
 private fun DeviceKind.label(): String = when (this) {
     DeviceKind.OUTLET -> "Outlet"

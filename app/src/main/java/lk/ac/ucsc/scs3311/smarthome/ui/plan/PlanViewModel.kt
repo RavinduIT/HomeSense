@@ -90,11 +90,21 @@ class PlanViewModel(
      * the specification requires it be a single entity, and the data model
      * makes any other shape unrepresentable.
      */
+    /**
+     * Creates a device on a cell.
+     *
+     * Each switch of a multi-switch unit is named at creation, rather than only
+     * the first. Everything else about a slot — the appliance, its wattage,
+     * whether it is a fire risk — is set afterwards from the device sheet,
+     * which keeps this dialog to a manageable size while leaving every slot
+     * fully configurable.
+     */
     fun addDevice(
         cell: IntCell,
         name: String,
         kind: DeviceKind,
-        slotCount: Int,
+        /** One entry per switch. Its size determines the slot count. */
+        slotLabels: List<String>,
         firstApplianceName: String,
         hazardous: Boolean,
         watts: Int?,
@@ -110,17 +120,25 @@ class PlanViewModel(
                     maxOnDuration = maxOnDuration,
                 ),
             )
-            DeviceKind.MULTI_SWITCH -> (0 until slotCount.coerceIn(MULTI_SWITCH_SLOT_RANGE)).map { i ->
-                newSlot(
-                    index = i,
-                    label = if (i == 0 && firstApplianceName.isNotBlank()) {
-                        firstApplianceName
-                    } else {
-                        "Switch ${i + 1}"
-                    },
-                    appliance = if (i == 0) Appliance(firstApplianceName, hazardous, watts) else Appliance(),
-                    maxOnDuration = if (i == 0) maxOnDuration else 0L,
-                )
+            DeviceKind.MULTI_SWITCH -> {
+                val labels = slotLabels
+                    .take(MULTI_SWITCH_SLOT_RANGE.last)
+                    .ifEmpty { List(MULTI_SWITCH_SLOT_RANGE.first) { "" } }
+                labels.mapIndexed { i, label ->
+                    newSlot(
+                        index = i,
+                        label = label.trim().ifBlank { "Switch ${i + 1}" },
+                        // The appliance details in the dialog describe the first
+                        // switch. The rest are named here and detailed from the
+                        // device sheet, where every field is editable.
+                        appliance = if (i == 0) {
+                            Appliance(firstApplianceName, hazardous, watts)
+                        } else {
+                            Appliance()
+                        },
+                        maxOnDuration = if (i == 0) maxOnDuration else 0L,
+                    )
+                }
             }
         }
 
