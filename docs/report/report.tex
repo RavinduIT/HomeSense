@@ -252,6 +252,26 @@ on the same device. And push notifications are published to a topic named after
 the household rather than to a single shared topic, which would have delivered
 every family's cut-off alerts to every installation.}
 
+\subsubsection{Commanding a device that has not reported}
+
+A device created from the application has never been reported on, so its status
+is \code{DISCONNECTED}. The control is nonetheless enabled.
+
+Disabling it appears defensible, on the grounds that one cannot operate what one
+cannot reach, and it was the original behaviour. It is wrong for two reasons.
+The application writes \code{desiredState}, which is an intention rather than an
+instruction that has taken effect, and recording an intention for a device that
+is currently unreachable is precisely what that field is for: the write is
+queued and applied when the device reports back. More decisively, every newly
+placed device begins in that state, so refusing commands left each one
+permanently unusable with no action available to the user.
+
+What the interface must not do is imply the command took effect, and it does
+not. The status continues to read \code{DISCONNECTED}, and the command is
+reported as saved rather than confirmed. The reconciliation window described
+above is also skipped, since a device that has never reported will not answer
+within it and would otherwise produce a misleading failure message.
+
 \subsubsection{Session lifecycle}
 
 The destination is derived from session state rather than navigated to. A gate
@@ -695,10 +715,10 @@ application code over a database snapshot.
 \toprule
 \textbf{Suite} & \textbf{Tests} & \textbf{Coverage} \\
 \midrule
-Application unit tests & 75 & Grid mapping, wire format, repository propagation and session teardown, Room aggregation, CSV escaping, schedule windows \\
+Application unit tests & 77 & Grid mapping, wire format, repository propagation and session teardown, Room aggregation, CSV escaping, schedule windows \\
 Worker rule tests      & 40 & Cut-off timing under a controlled clock, restart recovery, status precedence, schedule boundaries \\
 \midrule
-\textbf{Total}         & \textbf{115} & \\
+\textbf{Total}         & \textbf{117} & \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -743,9 +763,8 @@ R14 & Cut-off raises an alert & \code{notifications.ts}, \code{ui/alerts/} & Dem
 R15 & Usage reporting & \code{ui/report/}, \code{UsageDao} & \code{UsageDaoTest} and others & 18:00 \\
 R16 & Web simulator reflecting updates & \code{simulator/index.html} & Demonstration \textbf{(M)} & 10:30 \\
 R17 & Simulator listens to the database & \code{simulator/index.html} & Demonstration \textbf{(M)} & 6:00 \\
-A1  & Accounts, sign-in and sign-out & \code{data/auth/}, \code{ui/account/} & Verified against the deployed project & --- \
-A2  & Household tenancy and roles & \code{database.rules.json} & Table 
-ef{tab:rulescheck} & --- \
+A1  & Accounts, sign-in and sign-out & \code{data/auth/}, \code{ui/account/} & Verified against the deployed project & --- \\
+A2  & Household tenancy and roles & \code{database.rules.json} & Table \ref{tab:rulescheck} & --- \\
 D1  & Repository and APK & \code{apk/HomeSense-1.0.apk} & Signature verified & --- \\
 D2  & Technical report & This document & --- & --- \\
 D3  & Demonstration, three members & Demonstration script & --- & 0:00 \\
@@ -756,16 +775,12 @@ D3  & Demonstration, three members & Demonstration script & --- & 0:00 \\
 \label{app:limitations}
 
 \textbf{Client roles are not distinguished.} The mobile client and the simulator
-both authenticate anonymously, so the security rules cannot separate them. A
-modified client could write \code{reportedState} as though it were hardware.
-Separating the two roles would require custom authentication claims and a
-service to issue them, which is outside the scope of this assignment. No client
-can write \code{status}, which is the property on which the safety argument
-depends.
-
-\textbf{A single home is supported.} The database tree is keyed by home
-identifier, so support for multiple homes would be additive, but it is not
-implemented.
+sign in as the same kind of household member, so the security rules cannot tell
+one from the other. A modified client could therefore write
+\code{reportedState} as though it were hardware. Separating the two roles would
+require custom authentication claims and a service to issue them, which is
+outside the scope of this assignment. What no client can do is write
+\code{status}, which is the property on which the safety argument depends.
 
 \textbf{The worker must be running.} If the worker stops, no status is derived,
 no cut-off occurs and no schedule is applied. This is a single point of failure.
