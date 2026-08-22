@@ -82,6 +82,7 @@ fun PlanScreen(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val dialog by viewModel.dialog.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = modifier,
@@ -97,6 +98,29 @@ fun PlanScreen(
         },
     ) { padding ->
         val floor = state.floor
+
+        // A floor that has been deleted, by this member or another, is not a
+        // floor that is still arriving. Saying so and offering a way back is
+        // the difference between a screen that is waiting and one that is stuck.
+        if (state.isMissing) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(32.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("This floor no longer exists", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "It was removed from the household. Any devices that stood " +
+                        "on it were removed with it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                TextButton(onClick = onBack) { Text("Back to floors") }
+            }
+            return@Scaffold
+        }
+
         if (state.isLoading || floor == null) {
             Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
                 CircularProgressIndicator()
@@ -117,6 +141,21 @@ fun PlanScreen(
                 onCellTap = viewModel::onCellTapped,
                 onDeviceTap = viewModel::onDeviceTapped,
             )
+
+            error?.let { text ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = StatusColors.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = viewModel::dismissError) { Text("Dismiss") }
+                }
+            }
 
             Text(
                 text = "${state.devices.size} device(s) placed · " +

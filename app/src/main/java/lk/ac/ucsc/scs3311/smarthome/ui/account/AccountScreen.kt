@@ -266,6 +266,10 @@ fun AccountScreen(
     if (showInvite) {
         InviteDialog(
             code = state.inviteCode,
+            // The dialog covers the list, so a failure reported only there would
+            // be invisible behind it. It is passed in and shown in place.
+            error = state.message,
+            isBusy = state.isBusy,
             onDismiss = {
                 showInvite = false
                 viewModel.clearInvite()
@@ -507,7 +511,12 @@ private fun UpgradeAccountDialog(
 }
 
 @Composable
-private fun InviteDialog(code: String?, onDismiss: () -> Unit) {
+private fun InviteDialog(
+    code: String?,
+    error: String?,
+    isBusy: Boolean,
+    onDismiss: () -> Unit,
+) {
     // The current clipboard API is suspending, because writing to the system
     // clipboard can block. A scope is therefore needed to call it from a click.
     val clipboard = LocalClipboard.current
@@ -518,8 +527,24 @@ private fun InviteDialog(code: String?, onDismiss: () -> Unit) {
         title = { Text("Invite code") },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                if (code == null) {
+                if (code == null && error != null) {
+                    // Generating an invite is reserved to the owner, so a
+                    // refusal here has a nameable cause. Left as a spinner it
+                    // would turn for ever, with the explanation rendered in the
+                    // list behind this dialog where it cannot be read.
+                    Text(
+                        text = error,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = StatusColors.error,
+                    )
+                } else if (code == null && isBusy) {
                     CircularProgressIndicator(Modifier.padding(24.dp))
+                } else if (code == null) {
+                    Text(
+                        "No code was generated.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(

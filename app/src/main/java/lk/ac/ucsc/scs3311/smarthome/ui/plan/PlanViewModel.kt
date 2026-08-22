@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import lk.ac.ucsc.scs3311.smarthome.ui.common.launchWrite
 import kotlinx.coroutines.launch
 import lk.ac.ucsc.scs3311.smarthome.HomeSenseApp
 import lk.ac.ucsc.scs3311.smarthome.data.repository.HomeRepository
@@ -29,6 +30,15 @@ data class PlanUiState(
     val plan: FloorPlanSpec = PlanLibrary.blank,
     val devices: List<Device> = emptyList(),
     val isLoading: Boolean = true,
+    /**
+     * True once the floor list has arrived and this floor was not in it.
+     *
+     * Distinct from [isLoading], because the two look identical from the
+     * outside and need opposite responses. A floor deleted by another member
+     * while this screen was open would otherwise leave a spinner turning for
+     * ever, with nothing to indicate that waiting was pointless.
+     */
+    val isMissing: Boolean = false,
 ) {
     val occupiedCells: Set<IntCell>
         get() = devices.mapTo(mutableSetOf()) { IntCell(it.gridX, it.gridY) }
@@ -53,16 +63,29 @@ class PlanViewModel(
     private val _dialog = MutableStateFlow<PlanDialog>(PlanDialog.None)
     val dialog: StateFlow<PlanDialog> = _dialog
 
+    /** Reported when the server refuses a write, rather than crashing. */
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
+    fun dismissError() {
+        _error.value = null
+    }
+
     val uiState: StateFlow<PlanUiState> =
         combine(repository.floors, repository.devicesOnFloor(floorId)) { floors, devices ->
             val floor = floors.firstOrNull { it.id == floorId }
+            // An empty list is the placeholder the repository starts from, so it
+            // means "nothing has arrived yet". A non-empty list that does not
+            // contain this floor means the floor is genuinely gone.
+            val loaded = floors.isNotEmpty()
             PlanUiState(
                 floor = floor,
                 plan = PlanLibrary.byId(floor?.planAsset.orEmpty()),
                 // Sorting keeps the draw order stable, so markers never flicker
                 // between frames when an unrelated device reports in.
                 devices = devices.sortedBy { it.id },
-                isLoading = floor == null,
+                isLoading = floor == null && !loaded,
+                isMissing = floor == null && loaded,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -142,7 +165,7 @@ class PlanViewModel(
             }
         }
 
-        viewModelScope.launch {
+        viewModelScope.launchWrite(_error) {
             repository.saveDevice(
                 Device(
                     floorId = floorId,
@@ -174,11 +197,11 @@ class PlanViewModel(
     )
 
     fun moveDevice(deviceId: String, cell: IntCell) {
-        viewModelScope.launch { repository.moveDevice(deviceId, cell.x, cell.y) }
+        viewModelScope.launchWrite(_error) { repository.moveDevice(deviceId, cell.x, cell.y) }
     }
 
     fun deleteDevice(deviceId: String) {
-        viewModelScope.launch {
+        viewModelScope.launchWrite(_error) {
             repository.deleteDevice(deviceId)
             _dialog.value = PlanDialog.None
         }
