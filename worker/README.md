@@ -69,6 +69,7 @@ Render or Railway, as a background worker:
 - paste the service-account JSON into `GOOGLE_APPLICATION_CREDENTIALS_JSON`
   rather than committing a key file.
 
-See `docs/adr/0003` for why this is a plain process, and
-`docs/CLOUD_FUNCTIONS.md` for the migration path if the project ever moves to
-the Blaze plan.
+Cloud Functions would require the Blaze plan and a registered payment method,
+which is why this is a standalone process. The rules are pure functions with an
+injected clock and `executor.ts` is the only module that touches Firebase, so
+they would transfer to a Cloud Function unchanged.

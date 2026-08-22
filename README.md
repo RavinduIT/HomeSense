@@ -13,8 +13,7 @@ Developed for **SCS 3311**.
 | D.M. Isakya | 23000643 | Floor representation and grid mapping |
 
 **[Download the APK](apk/HomeSense-1.0.apk)** ·
-[Technical report](docs/HomeSense-Technical-Report.pdf) ·
-[Data contract](docs/SCHEMA.md)
+[Technical report](HomeSense-Technical-Report.pdf)
 
 The submitted build is committed to `apk/HomeSense-1.0.apk`, signed with the
 project release key; see `apk/README.md`.
@@ -46,11 +45,11 @@ that separation.
 | `worker/` | Safety worker — Node, TypeScript, `firebase-admin` |
 | `simulator/` | Hardware simulator — a single self-contained HTML page |
 | `apk/` | Signed release builds |
-| `docs/` | Technical report, data contract, setup guide, decision records |
+| `HomeSense-Technical-Report.pdf` | The submitted technical report |
 | `database.rules.json` | Database security rules |
 
-`docs/SCHEMA.md` defines the data contract shared by all three runtimes and is
-the appropriate starting point.
+`database.rules.json` is the appropriate starting point: it defines both the
+shape of the data and who may write each part of it.
 
 ---
 
@@ -92,19 +91,14 @@ The complete system consists of three processes sharing one Realtime Database.
 without further configuration. It holds identifiers rather than credentials;
 what protects the data is `database.rules.json`.
 
-To point the project at a different Firebase project, follow
-`docs/FIREBASE_SETUP.md`. All of it is available on the free Spark plan.
+The Firebase configuration is committed, including the worker's environment
+file and service-account key, so a checkout runs without a setup step. This is
+coursework on the free plan, and access is governed by `database.rules.json`,
+which confines a household to its members and prevents any client from writing
+a device's `status`.
 
-Genuine credentials are not committed. Copy each template:
-
-| Template | Destination |
-|---|---|
-| `worker/.env.template` | `worker/.env` |
-| `simulator/firebase-config.template.js` | `simulator/firebase-config.js` |
-| `keystore.properties.template` | `keystore.properties` (release builds only) |
-
-A service-account key is also required by the worker, at
-`worker/serviceAccountKey.json`.
+The signing keystore is the one thing not committed, since it is not
+reproducible if lost. `keystore.properties.template` shows what it needs.
 
 The simulator discovers households from the account it signs in with, so no
 household identifier needs configuring. Create a household in the application
@@ -186,27 +180,15 @@ signing configuration, so `assembleRelease` still produces an installable APK.
 
 ## Documentation
 
-### Submitted documents
+The technical report is `HomeSense-Technical-Report.pdf` in the repository root.
+It covers the three areas the assignment specifies for assessment: the
+synchronising mechanism, the floor representation and the simulator operations,
+with the architecture, the verification results, the requirement traceability
+matrix and the limitations as appendices.
 
-Typeset with LaTeX; sources are in `docs/report/` and build with
-[Tectonic](https://tectonic-typesetting.github.io/).
+Each component carries its own notes: `worker/README.md`, `simulator/README.md`
+and `apk/README.md`.
 
-| Document | Contents |
-|---|---|
-| [Technical Report](docs/HomeSense-Technical-Report.pdf) | Synchronising mechanism, floor representation and simulator operations, with architecture, verification, the requirement traceability matrix and limitations as appendices |
-
-### Repository documentation
-
-| Document | Contents |
-|---|---|
-| `docs/SCHEMA.md` | Database structure, the state separation, and write responsibilities |
-| `docs/CONVENTIONS.md` | Development conventions and architectural rules |
-| `docs/FIREBASE_SETUP.md` | Firebase configuration from an empty account |
-| `docs/LIFECYCLE_NOTES.md` | Behaviour under rotation, process death and force stop |
-| `docs/CLOUD_FUNCTIONS.md` | Migration path for the worker to Cloud Functions |
-| `docs/CONTRIBUTIONS.md` | Module ownership and boundaries |
-| `docs/adr/` | Architecture decision records |
-| `docs/report/` | LaTeX sources and build instructions for the documents above |
 
 ## Floor plan images
 

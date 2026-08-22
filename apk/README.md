@@ -34,7 +34,7 @@ carry it out. See the repository README for how to start both.
 
 ```
 CN=HomeSense, OU=SCS 3311, O=UCSC, L=Colombo, C=LK
-SHA-256: c9ccf84713da65553550ddc9530dd948dcb6836aa915f6f0b11ce7142a594806
+SHA-256: fc02f5361fcd0e08fd4e90cf00ba53d9b4f869194eb0e04731a16eecc163e0ae
 ```
 
 Verify with:

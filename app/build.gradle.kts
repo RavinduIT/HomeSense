@@ -10,7 +10,7 @@ plugins {
 // The google-services plugin hard-fails when google-services.json is absent.
 // We apply it only when the file has actually been supplied, so that a fresh
 // clone (which has no secrets) still builds and can run the `demo` flavour.
-// See docs/FIREBASE_SETUP.md.
+// See the README.
 val googleServicesJson = file("google-services.json")
 if (googleServicesJson.exists()) {
     apply(plugin = libs.plugins.google.services.get().pluginId)
