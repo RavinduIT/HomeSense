@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -73,6 +74,8 @@ fun FloorsScreen(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Floor?>(null) }
+    var pendingEdit by remember { mutableStateOf<Floor?>(null) }
+    val error by viewModel.error.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = modifier,
@@ -83,15 +86,31 @@ fun FloorsScreen(
             }
         },
     ) { padding ->
-        when {
-            state.isLoading -> Box(Modifier.fillMaxSize().padding(padding), Alignment.Center) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            error?.let { text ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = StatusColors.error,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = viewModel::dismissError) { Text("Dismiss") }
+                }
+            }
+
+            when {
+            state.isLoading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
                 CircularProgressIndicator()
             }
 
-            state.floors.isEmpty() -> EmptyFloors(Modifier.fillMaxSize().padding(padding))
+            state.floors.isEmpty() -> EmptyFloors(Modifier.fillMaxSize())
 
             else -> LazyColumn(
-                modifier = Modifier.fillMaxSize().padding(padding),
+                modifier = Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -99,20 +118,43 @@ fun FloorsScreen(
                     FloorCard(
                         summary = summary,
                         onClick = { onOpenFloor(summary.floor.id) },
+                        onEdit = { pendingEdit = summary.floor },
                         onDelete = { pendingDelete = summary.floor },
                     )
                 }
+            }
             }
         }
     }
 
     if (showAddDialog) {
-        AddFloorDialog(
+        FloorDialog(
+            existing = null,
             existingLevels = state.floors.map { it.floor.level }.toSet(),
             onDismiss = { showAddDialog = false },
             onConfirm = { name, level, planId, cols, rows ->
                 viewModel.addFloor(name, level, planId, cols, rows)
                 showAddDialog = false
+            },
+        )
+    }
+
+    pendingEdit?.let { floor ->
+        FloorDialog(
+            existing = floor,
+            existingLevels = state.floors.map { it.floor.level }.toSet(),
+            onDismiss = { pendingEdit = null },
+            onConfirm = { name, level, planId, cols, rows ->
+                viewModel.updateFloor(
+                    floor.copy(
+                        name = name,
+                        level = level,
+                        planAsset = planId,
+                        gridCols = cols,
+                        gridRows = rows,
+                    ),
+                )
+                pendingEdit = null
             },
         )
     }
@@ -166,6 +208,7 @@ private fun EmptyFloors(modifier: Modifier = Modifier) {
 private fun FloorCard(
     summary: FloorSummary,
     onClick: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -204,6 +247,9 @@ private fun FloorCard(
                     }
                 }
             }
+            IconButton(onClick = onEdit) {
+                Icon(Icons.Default.Edit, contentDescription = "Edit ${summary.floor.name}")
+            }
             IconButton(onClick = onDelete) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete ${summary.floor.name}")
             }
@@ -221,26 +267,39 @@ private fun CountChip(text: String, color: androidx.compose.ui.graphics.Color) {
     )
 }
 
+/**
+ * Creates a floor, or edits one.
+ *
+ * The two differ only in what the fields start at and what the buttons say, so
+ * one composable serves both: a second, nearly identical dialog would be one
+ * more place for the two to drift apart.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddFloorDialog(
+private fun FloorDialog(
+    existing: Floor?,
     existingLevels: Set<Int>,
     onDismiss: () -> Unit,
     onConfirm: (name: String, level: Int, planId: String, cols: Int, rows: Int) -> Unit,
 ) {
-    // A sensible default level: the next storey up from whatever exists.
+    // When creating, the next storey up from whatever exists is a sensible
+    // starting point. When editing, the floor's own values are.
     val defaultLevel = remember(existingLevels) { (existingLevels.maxOrNull() ?: -1) + 1 }
 
-    var name by rememberSaveable { mutableStateOf("") }
-    var level by rememberSaveable { mutableStateOf(defaultLevel.toString()) }
-    var planId by rememberSaveable { mutableStateOf(PlanLibrary.groundFloor.id) }
-    var cols by rememberSaveable { mutableIntStateOf(Floor.DEFAULT_COLS) }
-    var rows by rememberSaveable { mutableIntStateOf(Floor.DEFAULT_ROWS) }
+    var name by rememberSaveable { mutableStateOf(existing?.name.orEmpty()) }
+    var level by rememberSaveable {
+        mutableStateOf((existing?.level ?: defaultLevel).toString())
+    }
+    var planId by rememberSaveable {
+        mutableStateOf(existing?.planAsset ?: PlanLibrary.groundFloor.id)
+    }
+    var cols by rememberSaveable { mutableIntStateOf(existing?.gridCols ?: Floor.DEFAULT_COLS) }
+    var rows by rememberSaveable { mutableIntStateOf(existing?.gridRows ?: Floor.DEFAULT_ROWS) }
     var planMenuOpen by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add a floor") },
+        title = { Text(if (existing == null) "Add a floor" else "Edit floor") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
@@ -320,9 +379,15 @@ private fun AddFloorDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    onConfirm(name, level.toIntOrNull() ?: defaultLevel, planId, cols, rows)
+                    onConfirm(
+                        name,
+                        level.toIntOrNull() ?: (existing?.level ?: defaultLevel),
+                        planId,
+                        cols,
+                        rows,
+                    )
                 },
-            ) { Text("Add") }
+            ) { Text(if (existing == null) "Add" else "Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
@@ -341,6 +406,7 @@ private fun FloorCardPreview() {
                     problemCount = 0,
                 ),
                 onClick = {},
+                onEdit = {},
                 onDelete = {},
             )
             FloorCard(
@@ -351,6 +417,7 @@ private fun FloorCardPreview() {
                     problemCount = 2,
                 ),
                 onClick = {},
+                onEdit = {},
                 onDelete = {},
             )
         }

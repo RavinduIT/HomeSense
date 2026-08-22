@@ -5,16 +5,17 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import lk.ac.ucsc.scs3311.smarthome.HomeSenseApp
 import lk.ac.ucsc.scs3311.smarthome.data.repository.HomeRepository
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Device
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Floor
 import lk.ac.ucsc.scs3311.smarthome.domain.model.SlotStatus
+import lk.ac.ucsc.scs3311.smarthome.ui.common.launchWrite
 import lk.ac.ucsc.scs3311.smarthome.ui.plan.PlanLibrary
 import lk.ac.ucsc.scs3311.smarthome.ui.plan.planStatus
 
@@ -65,8 +66,16 @@ class FloorsViewModel(private val repository: HomeRepository) : ViewModel() {
         )
     }
 
+    /** Reported when the server refuses a write, rather than crashing. */
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
+    fun dismissError() {
+        _error.value = null
+    }
+
     fun addFloor(name: String, level: Int, planId: String, cols: Int, rows: Int) {
-        viewModelScope.launch {
+        viewModelScope.launchWrite(_error) {
             repository.saveFloor(
                 Floor(
                     name = name.trim().ifBlank { "Floor $level" },
@@ -79,13 +88,29 @@ class FloorsViewModel(private val repository: HomeRepository) : ViewModel() {
         }
     }
 
+    /**
+     * Saves a change to an existing floor: its name, storey, plan or grid size.
+     *
+     * Devices are positioned by cell, so shrinking the grid can leave one
+     * outside it. Those devices are not deleted; the plan simply stops drawing
+     * them until the grid is large enough again, which is recoverable, whereas
+     * removing them would not be.
+     */
     fun updateFloor(floor: Floor) {
-        viewModelScope.launch { repository.saveFloor(floor) }
+        viewModelScope.launchWrite(_error) {
+            repository.saveFloor(
+                floor.copy(
+                    name = floor.name.trim().ifBlank { "Floor ${floor.level}" },
+                    gridCols = floor.gridCols.coerceIn(Floor.COL_RANGE),
+                    gridRows = floor.gridRows.coerceIn(Floor.ROW_RANGE),
+                ),
+            )
+        }
     }
 
     /** Also removes the devices standing on it — see the repository. */
     fun deleteFloor(floorId: String) {
-        viewModelScope.launch { repository.deleteFloor(floorId) }
+        viewModelScope.launchWrite(_error) { repository.deleteFloor(floorId) }
     }
 
     companion object {
