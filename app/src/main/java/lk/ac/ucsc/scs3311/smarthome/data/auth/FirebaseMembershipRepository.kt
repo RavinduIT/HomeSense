@@ -89,10 +89,33 @@ class FirebaseMembershipRepository(
             }
         }.distinctUntilChanged()
 
+    /**
+     * The role the household itself records, not the one the account's own
+     * index claims.
+     *
+     * `/users/{uid}/homes` is written by its owner, so an account can set the
+     * role recorded there to anything. It drives the household list, where a
+     * wrong value is cosmetic. It must not drive what the interface offers:
+     * a member who edited it would be shown owner controls, and every one of
+     * them would then be refused by the rules, which reads as the application
+     * being broken rather than the action being disallowed.
+     *
+     * `/homes/{homeId}/members/{uid}` is readable by members and writable only
+     * by the owner, so it is what the rules themselves consult and what is
+     * read here.
+     */
     override val activeRole: Flow<MemberRole?> =
-        combine(memberships, activeHomeId) { available, active ->
-            available.firstOrNull { it.homeId == active }?.role
-        }.distinctUntilChanged()
+        combine(uidFlow, activeHomeId) { uid, homeId -> uid to homeId }
+            .flatMapLatest { (uid, homeId) ->
+                if (uid == null || homeId == null) {
+                    flowOf(null)
+                } else {
+                    root.child(NODE_HOMES).child(homeId)
+                        .child(NODE_MEMBERS).child(uid).child("role")
+                        .valueFlow { snapshot -> roleOf(snapshot.value as? String) }
+                }
+            }
+            .distinctUntilChanged()
 
     override fun members(homeId: String): Flow<List<HomeMember>> =
         root.child(NODE_HOMES).child(homeId).child(NODE_MEMBERS).valueFlow { snapshot ->
