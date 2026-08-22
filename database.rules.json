@@ -36,8 +36,8 @@
 
     "homeIndex": {
       "$homeId": {
-        ".write": "auth != null",
-        ".validate": "newData.isBoolean()"
+        ".write": "auth != null && (root.child('homes').child($homeId).child('members').child(auth.uid).child('role').val() == 'OWNER' || (!data.exists() && !root.child('homes').child($homeId).child('members').exists()))",
+        ".validate": "newData.isBoolean() && newData.val() == true"
       }
     },
 

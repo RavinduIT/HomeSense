@@ -38,8 +38,9 @@ fun Throwable.asUserMessage(): String {
     return when {
         text.contains("Permission denied", ignoreCase = true) ||
             text.contains("PERMISSION_DENIED", ignoreCase = true) ->
-            "That change was refused. Adding devices and changing safety " +
-                "settings are reserved to the household owner."
+            "That change was refused. Renaming the household, managing who " +
+                "belongs to it and arming an automatic cut-off are reserved " +
+                "to its owner."
 
         text.contains("network", ignoreCase = true) ||
             text.contains("unavailable", ignoreCase = true) ->

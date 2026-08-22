@@ -172,9 +172,10 @@ fun AccountScreen(
                             "As the owner you can add and remove devices, configure " +
                                 "safety cut-offs, and manage who belongs to this household."
                         } else {
-                            "As a member you can operate devices and edit schedules. " +
-                                "Adding devices and changing safety cut-offs is reserved " +
-                                "to the household owner, because a cut-off protects everyone."
+                            "As a member you can operate devices, add and remove them, " +
+                                "and edit schedules. Renaming this household, managing who " +
+                                "belongs to it and arming a safety cut-off are reserved to " +
+                                "its owner, because a cut-off protects everyone."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

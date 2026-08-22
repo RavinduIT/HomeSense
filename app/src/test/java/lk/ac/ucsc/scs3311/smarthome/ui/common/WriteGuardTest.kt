@@ -4,6 +4,8 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -31,8 +33,9 @@ class WriteGuardTest {
         }.join()
 
         assertEquals(
-            "That change was refused. Adding devices and changing safety " +
-                "settings are reserved to the household owner.",
+            "That change was refused. Renaming the household, managing who " +
+                "belongs to it and arming an automatic cut-off are reserved " +
+                "to its owner.",
             errors.value,
         )
     }
@@ -51,11 +54,13 @@ class WriteGuardTest {
 
     @Test
     fun `a refusal is named rather than reported as a generic failure`() {
-        assertTrue(
-            RuntimeException("PERMISSION_DENIED: Permission denied")
-                .asUserMessage()
-                .contains("household owner"),
-        )
+        val message = RuntimeException("PERMISSION_DENIED: Permission denied").asUserMessage()
+
+        // Not the wording, which will change; that it says who may do this and
+        // does not fall through to the generic case, which will not.
+        assertTrue(message.contains("owner"))
+        assertNotEquals("That did not work. Please try again.", message)
+        assertFalse(message.contains("PERMISSION_DENIED"))
     }
 
     @Test
