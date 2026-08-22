@@ -44,7 +44,7 @@ that separation.
 | `app/` | Android client — Kotlin, Jetpack Compose, MVVM |
 | `worker/` | Safety worker — Node, TypeScript, `firebase-admin` |
 | `simulator/` | Hardware simulator — a single self-contained HTML page |
-| `apk/` | Signed release builds |
+| `apk/` | The signed release build |
 | `HomeSense-Technical-Report.pdf` | The submitted technical report |
 | `database.rules.json` | Database security rules |
 
@@ -75,7 +75,7 @@ file containing `sdk.dir=/path/to/sdk`.
 ### Running the tests
 
 ```bash
-./gradlew testDemoDebugUnitTest    # 77 application tests
+./gradlew testDemoDebugUnitTest    # 83 application tests
 cd worker && npm ci && npm test    # 40 worker tests, no credentials required
 ```
 
@@ -87,18 +87,14 @@ The complete system consists of three processes sharing one Realtime Database.
 
 ### 1. Firebase project
 
-`app/google-services.json` is committed, so the application builds and connects
-without further configuration. It holds identifiers rather than credentials;
-what protects the data is `database.rules.json`.
+Every file the three processes need is committed — `app/google-services.json`,
+`simulator/firebase-config.js`, `worker/.env` and the worker's service-account
+key — so a checkout runs without a setup step.
 
-The Firebase configuration is committed, including the worker's environment
-file and service-account key, so a checkout runs without a setup step. This is
-coursework on the free plan, and access is governed by `database.rules.json`,
-which confines a household to its members and prevents any client from writing
-a device's `status`.
-
-The signing keystore is the one thing not committed, since it is not
-reproducible if lost. `keystore.properties.template` shows what it needs.
+What protects the data is `database.rules.json`, which confines a household to
+its members and prevents any client from writing a device's `status`. The
+service-account key is the exception: it bypasses those rules entirely, which
+is acceptable for coursework on the free plan and would not be beyond it.
 
 The simulator discovers households from the account it signs in with, so no
 household identifier needs configuring. Create a household in the application
@@ -163,18 +159,17 @@ sheet, since no browser simulator is present.
 
 ## Release builds
 
-The submitted builds are committed to `apk/` and described in `apk/README.md`.
-Both are signed with the project release key.
-
-To rebuild them:
+The submitted build is `apk/HomeSense-1.0.apk`, signed with the project release
+key and described in `apk/README.md`.
 
 ```bash
-cp keystore.properties.template keystore.properties   # then complete it
 ./gradlew assembleRelease
 ```
 
-If `keystore.properties` is absent the release build falls back to the debug
-signing configuration, so `assembleRelease` still produces an installable APK.
+The keystore and `keystore.properties` are committed, so this reproduces a
+build with the same signature. If they are removed the release build falls back
+to debug signing rather than failing, so `assembleRelease` still produces an
+installable APK — but one that will not install over the submitted build.
 
 ---
 
@@ -201,9 +196,9 @@ sharp at any screen density.
 
 | Suite | Tests |
 |---|---|
-| Application unit tests | 77 |
+| Application unit tests | 83 |
 | Worker rule tests | 40 |
-| Total | 117 |
+| Total | 123 |
 
 The continuous integration workflow in `.github/workflows/build.yml` runs both
 suites on every push, from a checkout containing no credentials.

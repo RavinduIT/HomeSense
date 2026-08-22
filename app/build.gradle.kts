@@ -16,10 +16,11 @@ if (googleServicesJson.exists()) {
     apply(plugin = libs.plugins.google.services.get().pluginId)
 }
 
-// Signing credentials come from a gitignored properties file. When it is
-// absent — a fresh clone, or CI — the release build falls back to the debug
-// signing config so that `assembleRelease` still produces an installable APK
-// instead of failing. See keystore.properties.template.
+// Signing credentials come from keystore.properties. When it is absent the
+// release build falls back to the debug signing config so that
+// `assembleRelease` still produces an installable APK instead of failing —
+// but one signed with a different key, which will not install over a build
+// signed with the release key.
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {
