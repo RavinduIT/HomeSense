@@ -1,27 +1,23 @@
-### Credentials — never commit these ###
+### Signing material ###
 #
-# The distinction that matters is between an identifier and a credential.
-#
-# google-services.json is NOT here. It holds a project id, an app id and an
-# Android API key, all of which are extractable from any distributed APK in
-# seconds. They identify the project; they authorise nothing. What protects the
-# data is database.rules.json. Firebase's own guidance is to commit it, and
-# without it neither continuous integration nor a teammate's checkout can build
-# the live flavour.
-#
-# The three below are genuine credentials. A service-account key grants full
-# administrative access and bypasses every security rule; a keystore lets its
-# holder sign an application as though they were its author.
-serviceAccountKey.json
-worker/serviceAccountKey.json
-*.keystore
+# The release keystore is committed. It is not reproducible: regenerating it
+# produces a different signature, and an application signed with a new key
+# cannot be installed over one signed with the old. Losing it has already cost
+# this project one signature change, and every member of the team needs it to
+# produce an identical build. For anything published to a store it would belong
+# in a secret manager instead, since whoever holds it can sign as the author.
 *.jks
-keystore.properties
 
 ### Machine-local ###
+#
+# Points at an SDK path that differs on every machine, so it is never shared.
 local.properties
-worker/.env
-simulator/firebase-config.js
+
+# Firebase configuration is committed deliberately, so that a checkout runs
+# without a setup step. The project is coursework on the free plan; access is
+# governed by database.rules.json, which confines a household to its members.
+# For anything beyond coursework the service-account key in particular would
+# belong in a secret manager, since it bypasses those rules entirely.
 
 ### Android / Gradle ###
 *.iml
@@ -50,7 +46,6 @@ worker/coverage/
 
 ### Misc ###
 *.log
-.env
 .env.local
 
 ### Internal preparation material ###
