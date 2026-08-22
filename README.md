@@ -75,7 +75,7 @@ file containing `sdk.dir=/path/to/sdk`.
 ### Running the tests
 
 ```bash
-./gradlew testDemoDebugUnitTest    # 83 application tests
+./gradlew testDemoDebugUnitTest    # 85 application tests
 cd worker && npm ci && npm test    # 40 worker tests, no credentials required
 ```
 
@@ -196,9 +196,9 @@ sharp at any screen density.
 
 | Suite | Tests |
 |---|---|
-| Application unit tests | 83 |
+| Application unit tests | 85 |
 | Worker rule tests | 40 |
-| Total | 123 |
+| Total | 125 |
 
 The continuous integration workflow in `.github/workflows/build.yml` runs both
 suites on every push, from a checkout containing no credentials.
