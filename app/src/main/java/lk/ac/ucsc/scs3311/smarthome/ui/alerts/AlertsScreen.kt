@@ -63,6 +63,7 @@ fun AlertsScreen(
     viewModel: AlertsViewModel = viewModel(factory = AlertsViewModel.Factory),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val error by viewModel.error.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = modifier,
@@ -110,6 +111,20 @@ fun AlertsScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            error?.let { text ->
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = text,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = StatusColors.error,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = viewModel::dismissError) { Text("Dismiss") }
+                    }
+                }
+            }
+
             items(state.alerts, key = { it.id }) { alert ->
                 AlertCard(
                     alert = alert,

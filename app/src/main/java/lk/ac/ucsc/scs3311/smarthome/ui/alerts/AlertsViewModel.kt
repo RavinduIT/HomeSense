@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -13,6 +14,7 @@ import kotlinx.coroutines.launch
 import lk.ac.ucsc.scs3311.smarthome.HomeSenseApp
 import lk.ac.ucsc.scs3311.smarthome.data.repository.HomeRepository
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Alert
+import lk.ac.ucsc.scs3311.smarthome.ui.common.launchWrite
 
 data class AlertsUiState(
     val alerts: List<Alert> = emptyList(),
@@ -23,6 +25,14 @@ data class AlertsUiState(
 }
 
 class AlertsViewModel(private val repository: HomeRepository) : ViewModel() {
+
+    /** Reported when the server refuses a write, rather than crashing. */
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
+    fun dismissError() {
+        _error.value = null
+    }
 
     val uiState: StateFlow<AlertsUiState> =
         combine(repository.alerts, repository.devices) { alerts, devices ->
@@ -41,7 +51,7 @@ class AlertsViewModel(private val repository: HomeRepository) : ViewModel() {
      * a write that changes the message, the timestamp or the severity.
      */
     fun acknowledge(alertId: String) {
-        viewModelScope.launch { repository.acknowledgeAlert(alertId) }
+        viewModelScope.launchWrite(_error) { repository.acknowledgeAlert(alertId) }
     }
 
     companion object {

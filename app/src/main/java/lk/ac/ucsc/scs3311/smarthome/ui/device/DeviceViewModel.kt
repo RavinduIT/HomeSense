@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import lk.ac.ucsc.scs3311.smarthome.HomeSenseApp
 import lk.ac.ucsc.scs3311.smarthome.data.repository.HomeRepository
+import lk.ac.ucsc.scs3311.smarthome.ui.common.launchWrite
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Appliance
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Device
 import lk.ac.ucsc.scs3311.smarthome.domain.model.LinkState
@@ -146,11 +147,11 @@ class DeviceViewModel(
     }
 
     fun updateSchedule(slotId: String, schedule: Schedule) {
-        viewModelScope.launch { repository.updateSchedule(deviceId, slotId, schedule) }
+        viewModelScope.launchWrite(message) { repository.updateSchedule(deviceId, slotId, schedule) }
     }
 
     fun updateSafety(slotId: String, safety: Safety) {
-        viewModelScope.launch { repository.updateSafety(deviceId, slotId, safety) }
+        viewModelScope.launchWrite(message) { repository.updateSafety(deviceId, slotId, safety) }
     }
 
     /**
@@ -161,14 +162,14 @@ class DeviceViewModel(
      * neither of which had any way of being set after a device was created.
      */
     fun editSlot(slotId: String, label: String, appliance: Appliance) {
-        viewModelScope.launch {
+        viewModelScope.launchWrite(message) {
             repository.updateSlotLabel(deviceId, slotId, label.trim())
             repository.updateAppliance(deviceId, slotId, appliance)
         }
     }
 
     fun deleteDevice() {
-        viewModelScope.launch { repository.deleteDevice(deviceId) }
+        viewModelScope.launchWrite(message) { repository.deleteDevice(deviceId) }
     }
 
     fun dismissMessage() {
