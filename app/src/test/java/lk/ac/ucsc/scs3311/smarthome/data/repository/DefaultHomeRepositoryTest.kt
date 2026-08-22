@@ -22,6 +22,7 @@ import lk.ac.ucsc.scs3311.smarthome.domain.model.UsageEventType
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -386,6 +387,60 @@ class DefaultHomeRepositoryTest {
             assertEquals(emptyList<Device>(), awaitUntil { it.isEmpty() })
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    /**
+     * A refused read must not be fatal, and must not be permanent.
+     *
+     * The rules revoke a household's reads the moment the account stops being a
+     * member, so an open listener is cancelled rather than merely returning
+     * nothing. Recovering from that outside the `flatMapLatest` ends the chain
+     * itself: the failure is reported once and the stream never carries another
+     * value, so every screen keeps rendering what it last saw for the rest of
+     * the process. This asserts the recovery is placed where a later household
+     * still starts a new subscription.
+     */
+    @Test
+    fun `a refused read does not stop the stream serving the next household`() = runTest {
+        val source = TestRemoteSource(initialDevices = listOf(iron), servesHomeId = HOME_ID)
+        source.refuseReadsFor("revoked-home")
+        val repository = repositoryOn(source, backgroundScope)
+        repository.awaitLoaded()
+
+        repository.devices.test {
+            awaitUntil { it.isNotEmpty() }
+
+            // Removed from this household while the screen was open.
+            activeHome.value = "revoked-home"
+            assertEquals(emptyList<Device>(), awaitUntil { it.isEmpty() })
+
+            // Re-admitted, or simply switched back. The chain must still be live.
+            activeHome.value = HOME_ID
+            assertEquals(
+                listOf(iron.id),
+                awaitUntil { it.isNotEmpty() }.map { device -> device.id },
+            )
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    /** The refusal is reported, not swallowed. */
+    @Test
+    fun `a refused read is surfaced through the error channel`() = runTest {
+        val source = TestRemoteSource(initialDevices = listOf(iron), servesHomeId = HOME_ID)
+        source.refuseReadsFor("revoked-home")
+        val repository = repositoryOn(source, backgroundScope)
+        repository.awaitLoaded()
+
+        assertNull(repository.syncError.value)
+
+        activeHome.value = "revoked-home"
+        repository.devices.test {
+            awaitUntil { it.isEmpty() }
+            cancelAndIgnoreRemainingEvents()
+        }
+
+        assertTrue(repository.syncError.value != null)
     }
 
     private companion object {

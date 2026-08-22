@@ -8,6 +8,7 @@ import com.google.firebase.database.ValueEventListener
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
@@ -68,7 +69,7 @@ class FirebaseMembershipRepository(
                         joinedAt = (raw?.get("joinedAt") as? Number)?.toLong() ?: 0L,
                     )
                 }.sortedBy { it.joinedAt }
-            }
+            }.recoverFromRefusal(emptyList())
         }
 
     /**
@@ -113,6 +114,7 @@ class FirebaseMembershipRepository(
                     root.child(NODE_HOMES).child(homeId)
                         .child(NODE_MEMBERS).child(uid).child("role")
                         .valueFlow { snapshot -> roleOf(snapshot.value as? String) }
+                        .recoverFromRefusal(null)
                 }
             }
             .distinctUntilChanged()
@@ -130,7 +132,7 @@ class FirebaseMembershipRepository(
                     joinedAt = (raw["joinedAt"] as? Number)?.toLong() ?: 0L,
                 )
             }.sortedWith(compareBy({ it.role != MemberRole.OWNER }, { it.joinedAt }))
-        }
+        }.recoverFromRefusal(emptyList())
 
     override suspend fun selectHome(homeId: String) = preferences.setActiveHomeId(homeId)
 
@@ -283,6 +285,28 @@ class FirebaseMembershipRepository(
             .map { HomeInvite.ALPHABET[random.nextInt(HomeInvite.ALPHABET.length)] }
             .joinToString("")
     }
+
+    /**
+     * Ends a stream quietly when the server refuses its read.
+     *
+     * These listeners are cancelled routinely rather than exceptionally. The
+     * rules make `/users/{uid}` readable only while `auth` is that account and
+     * `/homes/{id}` readable only while the account is a member, so signing out
+     * refuses the first and being removed from a household refuses the second —
+     * and the refusal arrives before the authentication state that explains it.
+     *
+     * Every one of these flows is combined into the state a screen renders, and
+     * two of those combinations are collected with `stateIn(viewModelScope)`.
+     * An exception there is not caught by anything: `viewModelScope` installs
+     * no handler, so it reaches the thread's default one and terminates the
+     * process. Signing out would have done it.
+     *
+     * Each listener sits inside a `flatMapLatest` keyed on the account or the
+     * household, so ending one stream costs nothing that is not rebuilt when
+     * the key next changes.
+     */
+    private fun <T> Flow<T>.recoverFromRefusal(fallback: T): Flow<T> =
+        catch { emit(fallback) }
 
     private fun <T> com.google.firebase.database.DatabaseReference.valueFlow(
         transform: (DataSnapshot) -> T,

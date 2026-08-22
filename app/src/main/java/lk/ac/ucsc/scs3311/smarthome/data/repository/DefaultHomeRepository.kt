@@ -6,6 +6,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
@@ -69,6 +70,11 @@ class DefaultHomeRepository(
     private var started = false
 
     private val errors = MutableStateFlow<Throwable?>(null)
+    override val syncError: StateFlow<Throwable?> = errors.asStateFlow()
+
+    override fun clearSyncError() {
+        errors.value = null
+    }
 
     /**
      * The household the write methods act on.
@@ -91,9 +97,30 @@ class DefaultHomeRepository(
         return block(id)
     }
 
+    /**
+     * Recovers from a read the server refused.
+     *
+     * A listener is cancelled when the rules stop permitting its read: the
+     * account signed out, or its membership was removed while a screen was
+     * open. Both are ordinary events, and neither should be fatal.
+     *
+     * Placement matters more than the handling. Inside [flatMapLatest] this
+     * ends only the stream for the household that was refused, and the chain
+     * remains able to start a new one when another is selected. Outside it —
+     * where this was — the failure ends the chain itself, and every screen
+     * built from it keeps rendering the last values it saw for the rest of the
+     * process, with nothing to indicate that it has stopped listening.
+     */
+    private fun <T> Flow<T>.recoverFromRefusal(fallback: T): Flow<T> =
+        catch { error ->
+            errors.value = error
+            emit(fallback)
+        }
+
     override val floors: StateFlow<List<Floor>> =
         homeId.flatMapLatest { id ->
-            if (id == null) flowOf(emptyList()) else remote.observeFloors(id)
+            if (id == null) flowOf(emptyList())
+            else remote.observeFloors(id).recoverFromRefusal(emptyList())
         }
             .onEach { mirrorFloors(it) }
             .catch { errors.value = it }
@@ -101,7 +128,8 @@ class DefaultHomeRepository(
 
     override val devices: StateFlow<List<Device>> =
         homeId.flatMapLatest { id ->
-            if (id == null) flowOf(emptyList()) else remote.observeDevices(id)
+            if (id == null) flowOf(emptyList())
+            else remote.observeDevices(id).recoverFromRefusal(emptyList())
         }
             .onEach { mirrorDevices(it) }
             .catch { errors.value = it }
@@ -109,7 +137,8 @@ class DefaultHomeRepository(
 
     override val alerts: StateFlow<List<Alert>> =
         homeId.flatMapLatest { id ->
-            if (id == null) flowOf(emptyList()) else remote.observeAlerts(id)
+            if (id == null) flowOf(emptyList())
+            else remote.observeAlerts(id).recoverFromRefusal(emptyList())
         }
             .map { list -> list.sortedByDescending { it.at } }
             .onEach { mirrorAlerts(it) }
@@ -132,7 +161,8 @@ class DefaultHomeRepository(
         // reporting figures are already available when that tab is opened.
         scope.launch {
             homeId.flatMapLatest { id ->
-                if (id == null) flowOf(emptyList()) else remote.observeUsage(id)
+                if (id == null) flowOf(emptyList())
+                else remote.observeUsage(id).recoverFromRefusal(emptyList())
             }
                 .catch { errors.value = it }
                 .collect { mirrorUsage(it) }

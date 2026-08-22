@@ -2,6 +2,7 @@ package lk.ac.ucsc.scs3311.smarthome.data.repository
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.update
 import lk.ac.ucsc.scs3311.smarthome.data.remote.RemoteHomeSource
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Alert
@@ -38,8 +39,22 @@ class TestRemoteSource(
     private val alerts = MutableStateFlow<List<Alert>>(emptyList())
     private val usage = MutableStateFlow<List<UsageEvent>>(emptyList())
 
-    private fun <T> servedTo(homeId: String, source: Flow<List<T>>): Flow<List<T>> =
-        if (homeId == servesHomeId) source else MutableStateFlow(emptyList())
+    /**
+     * Households whose reads the server refuses, imitating a rule that no
+     * longer permits them: the account signed out, or its membership was
+     * removed while a screen was open.
+     */
+    private val refused = mutableSetOf<String>()
+
+    fun refuseReadsFor(homeId: String) {
+        refused += homeId
+    }
+
+    private fun <T> servedTo(homeId: String, source: Flow<List<T>>): Flow<List<T>> = when {
+        homeId in refused -> flow { throw SecurityException("Permission denied") }
+        homeId == servesHomeId -> source
+        else -> MutableStateFlow(emptyList())
+    }
 
     /** Everything the repository asked the cloud to do, in order. */
     val writes = mutableListOf<String>()

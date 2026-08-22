@@ -135,7 +135,14 @@ class DeviceViewModel(
             val ids = device.slots.map { it.id }.toSet()
             pending.update { it + ids }
             runCatching { repository.setAllSlots(deviceId, desired) }
-                .onFailure { message.value = "Could not reach the hub. Nothing was changed." }
+                .onFailure {
+                    // Nothing was written, so nothing will report back. Waiting
+                    // out the reconciliation window would leave every slot
+                    // spinning for six seconds after a failure already known.
+                    pending.update { current -> current - ids }
+                    message.value = "Could not reach the hub. Nothing was changed."
+                    return@launch
+                }
 
             withTimeoutOrNull(RECONCILE_TIMEOUT_MS) {
                 repository.device(deviceId).first { current ->

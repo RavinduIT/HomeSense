@@ -1,6 +1,7 @@
 package lk.ac.ucsc.scs3311.smarthome.data.repository
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import lk.ac.ucsc.scs3311.smarthome.data.local.SlotUsageTotal
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Alert
 import lk.ac.ucsc.scs3311.smarthome.domain.model.Appliance
@@ -79,6 +80,18 @@ interface HomeRepository {
 
     /** Rows for the CSV export, oldest first. */
     suspend fun usageRows(fromMillis: Long, toMillis: Long): List<UsageRow>
+
+    /**
+     * The most recent failure to read from the cloud, or `null`.
+     *
+     * Reads fail for reasons a person can act on — most often that the account
+     * is no longer a member of the household it is looking at — so the failure
+     * is carried to the interface rather than being logged and dropped.
+     * Clearing it is [clearSyncError].
+     */
+    val syncError: StateFlow<Throwable?>
+
+    fun clearSyncError()
 
     /** Starts cloud synchronisation. Safe to call more than once. */
     fun start()

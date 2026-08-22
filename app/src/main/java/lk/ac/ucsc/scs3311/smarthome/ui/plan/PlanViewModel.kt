@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import lk.ac.ucsc.scs3311.smarthome.ui.common.asUserMessage
 import lk.ac.ucsc.scs3311.smarthome.ui.common.launchWrite
 import kotlinx.coroutines.launch
 import lk.ac.ucsc.scs3311.smarthome.HomeSenseApp
@@ -65,10 +66,24 @@ class PlanViewModel(
 
     /** Reported when the server refuses a write, rather than crashing. */
     private val _error = MutableStateFlow<String?>(null)
-    val error: StateFlow<String?> = _error
+
+    /**
+     * What went wrong, whether the app caused it or the cloud did.
+     *
+     * A write this screen made is reported through [_error]. A read that the
+     * server refused is reported by the repository, which cannot show anything
+     * itself. Both mean the same thing to the person holding the phone — the
+     * house on screen may not be the house as it is — so they are presented
+     * through one banner rather than two.
+     */
+    val error: StateFlow<String?> =
+        combine(_error, repository.syncError) { own, sync ->
+            own ?: sync?.asUserMessage()
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
 
     fun dismissError() {
         _error.value = null
+        repository.clearSyncError()
     }
 
     val uiState: StateFlow<PlanUiState> =
